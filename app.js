@@ -90,6 +90,12 @@ function geom() {
   const key = state.productId + ':' + state.view;
   if (geomCache.has(key)) return geomCache.get(key);
   const v = viewDef();
+  const bk = bakedView();
+  if (bk) {
+    const g = { shape: new Path2D(bk.shape), details: [], baked: bk };
+    geomCache.set(key, g);
+    return g;
+  }
   const m = v.mirror ? new DOMMatrix([-1, 0, 0, 1, W, 0]) : new DOMMatrix();
   const xf = (d) => { const p = new Path2D(); p.addPath(new Path2D(d), m); return p; };
   const shape = new Path2D();
@@ -98,6 +104,21 @@ function geom() {
   geomCache.set(key, g);
   return g;
 }
+
+// Real 3D models rendered into editor space (products-baked.js): silhouette, fabric shading, base colors.
+const bakedImages = {};
+function bakedView(pid = state.productId, view = state.view) {
+  const b = typeof BAKED !== 'undefined' && BAKED[pid] && BAKED[pid][view];
+  if (!b) return null;
+  const k = pid + ':' + view;
+  if (!bakedImages[k]) {
+    const mk = (src) => { if (!src) return null; const i = new Image(); i.onload = render; i.src = src; return i; };
+    bakedImages[k] = { shape: b.shape, shade: mk(b.shade), base: mk(b.base) };
+  }
+  return bakedImages[k];
+}
+const ready = (img) => img && img.complete && img.naturalWidth;
+const shadeCv = makeCanvas(false);
 
 function layer(key = state.view) {
   if (!state.layers[key]) {
@@ -262,7 +283,7 @@ function composeArt(includeLive = true) {
   return tmpCv;
 }
 
-function drawScene(c, ui) {
+function drawScene(c, ui, flat = false) {
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalAlpha = 1;
   c.globalCompositeOperation = 'source-over';
@@ -275,23 +296,47 @@ function drawScene(c, ui) {
   c.shadowColor = 'rgba(0,0,0,0.35)';
   c.shadowBlur = 40;
   c.shadowOffsetY = 18;
-  if (g) {
+  if (g && g.baked && g.baked.base && !flat) {
+    c.fillStyle = '#fff';
+    c.fill(g.shape);
+    c.shadowColor = 'transparent';
+    c.clip(g.shape);
+    if (ready(g.baked.base)) c.drawImage(g.baked.base, 0, 0, W, H);
+  } else if (g) {
     c.fillStyle = state.garment;
     c.fill(g.shape);
+    if (g.baked && !flat && ready(g.baked.shade)) {
+      c.shadowColor = 'transparent';
+      c.clip(g.shape);
+      c.globalCompositeOperation = 'multiply';
+      c.drawImage(g.baked.shade, 0, 0, W, H);
+    }
   } else if (state.custom) {
     const f = state.custom.fit;
     c.drawImage(state.custom.canvas, f.x, f.y, f.w, f.h);
   }
   c.restore();
 
-  // artwork
-  const art = composeArt();
+  // artwork (on real garments it picks up the fabric's folds and shadows)
+  let art = composeArt();
+  if (g && g.baked && !flat && ready(g.baked.shade)) {
+    const s = shadeCv.getContext('2d');
+    s.globalCompositeOperation = 'source-over';
+    s.clearRect(0, 0, WS, HS);
+    s.drawImage(art, 0, 0);
+    s.globalCompositeOperation = 'multiply';
+    s.drawImage(g.baked.shade, 0, 0, WS, HS);
+    s.globalCompositeOperation = 'destination-in';
+    s.drawImage(art, 0, 0);
+    s.globalCompositeOperation = 'source-over';
+    art = shadeCv;
+  }
   c.save();
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.drawImage(art, 0, 0);
   c.restore();
 
-  if (g) {
+  if (g && !g.baked) {
     // fabric shading
     c.save();
     c.clip(g.shape);
@@ -522,7 +567,7 @@ function rgbToHex(r, g, b) {
 }
 
 function floodFill(p) {
-  drawScene(scratchCv.getContext('2d'), false);
+  drawScene(scratchCv.getContext('2d'), false, true);
   const sx = Math.floor(p.x * S), sy = Math.floor(p.y * S);
   if (sx < 0 || sy < 0 || sx >= WS || sy >= HS) return;
   const src = scratchCv.getContext('2d').getImageData(0, 0, WS, HS).data;
@@ -603,7 +648,9 @@ function addText(p, text = 'DRIP') {
   layer().objects.push(o);
   selectObject(o);
   setTool('select');
-  setTimeout(() => { const ti = $('#textInput'); ti.focus(); ti.select(); }, 0);
+  const focusText = () => { const ti = $('#textInput'); if (document.activeElement !== ti) { ti.focus(); ti.select(); } };
+  focusText();
+  setTimeout(focusText, 0);
   if (document.fonts) document.fonts.load(`72px "${o.font}"`).then(render).catch(() => {});
 }
 function addSticker(emoji) {
@@ -613,7 +660,46 @@ function addSticker(emoji) {
   selectObject(o);
   setTool('select');
 }
+// Drawings photographed or scanned on paper: if the image's border is plain paper,
+// turn the paper transparent so only the ink/paint is printed.
+function removePaper(src) {
+  return loadImage(src).then((img) => {
+    const max = 1600;
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * k));
+    c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const x = c.getContext('2d');
+    x.drawImage(img, 0, 0, c.width, c.height);
+    const d = x.getImageData(0, 0, c.width, c.height);
+    const a = d.data, w = c.width, h = c.height;
+    // already has transparency? leave it alone
+    let transparent = 0;
+    for (let i = 3; i < a.length; i += 4 * 97) if (a[i] < 250) transparent++;
+    if (transparent > (a.length / (4 * 97)) * 0.02) return src;
+    const R = [], G = [], B = [];
+    const push = (px, py) => { const i = (py * w + px) * 4; R.push(a[i]); G.push(a[i + 1]); B.push(a[i + 2]); };
+    for (let px = 0; px < w; px += 3) { push(px, 0); push(px, h - 1); }
+    for (let py = 0; py < h; py += 3) { push(0, py); push(w - 1, py); }
+    const med = (arr) => arr.slice().sort((p, q) => p - q)[arr.length >> 1];
+    const pr = med(R), pg = med(G), pb = med(B);
+    // how much of the border is close to the paper colour
+    let near = 0;
+    for (let i = 0; i < R.length; i++) if (Math.max(Math.abs(R[i] - pr), Math.abs(G[i] - pg), Math.abs(B[i] - pb)) < 40) near++;
+    if (Math.min(pr, pg, pb) < 140 || near / R.length < 0.85) return src; // not a light, plain background
+    for (let i = 0; i < a.length; i += 4) {
+      const dist = Math.max(Math.abs(a[i] - pr), Math.abs(a[i + 1] - pg), Math.abs(a[i + 2] - pb));
+      a[i + 3] = Math.max(0, Math.min(255, Math.round(((dist - 22) / 40) * 255)));
+    }
+    x.putImageData(d, 0, 0);
+    return c.toDataURL('image/png');
+  }).catch(() => src);
+}
+
 function addImage(src) {
+  removePaper(src).then(placeNewImage);
+}
+function placeNewImage(src) {
   const img = new Image();
   img.onload = () => {
     pushHistory();
@@ -840,7 +926,7 @@ function buildGarmentSwatches() {
 
 function svgThumb(p) {
   const v = p.views[0];
-  const d = v.shape.join(' ');
+  const d = (typeof BAKED !== 'undefined' && BAKED[p.id]) ? BAKED[p.id][v.key].shape : v.shape.join(' ');
   return `<svg viewBox="0 0 600 700" aria-hidden="true"><path d="${d}"/></svg>`;
 }
 function buildProductGrid() {
@@ -871,7 +957,7 @@ function setProduct(id) {
   const p = product();
   if (!p.views.some((v) => v.key === state.view)) state.view = p.views[0].key;
   $$('#productGrid .product').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
-  $('#garmentCard').hidden = id === 'custom';
+  $('#garmentCard').hidden = id === 'custom' || !!(bakedView(id, 'front') && bakedView(id, 'front').base);
   $('#removeBgRow').hidden = id !== 'custom';
   buildViewTabs();
   buildMask();
@@ -1283,6 +1369,55 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
 }
+
+/* ---------------- 3D / 360° bridge ---------------- */
+window.DripLab = {
+  get garment() { return state.garment; },
+  get productId() { return state.productId; },
+  get productName() { return product().name; },
+  garmentColors: GARMENT_COLORS,
+  setGarment,
+  // Artwork-only print for a product side, clipped to that product's shape.
+  getPrint(pid, view) {
+    const saved = { p: state.productId, v: state.view };
+    state.productId = pid === 'custom' && !state.custom ? 'custom' : pid;
+    state.view = view;
+    buildMask();
+    const c = copyCanvas(composeArt(false));
+    state.productId = saved.p;
+    state.view = saved.v;
+    buildMask();
+    return c;
+  },
+  // Add an uploaded drawing to a side, centred at (x, y) and fitted to `size`.
+  placeImage(pid, view, src, x, y, size) {
+    return removePaper(src).then((clean) => { src = clean; return loadImage(src); }).then((img) => {
+      const L = layer(view);
+      L.undo.push(snapshot(L));
+      L.redo.length = 0;
+      const k = Math.min(size / img.naturalWidth, size / img.naturalHeight);
+      const o = { id: nextId++, type: 'image', src, img, w: img.naturalWidth * k, h: img.naturalHeight * k, x, y, rot: 0, scale: 1, flip: false, opacity: 1 };
+      L.objects.push(o);
+      if (view === state.view) state.selectedId = o.id;
+      markDirty();
+      render();
+    });
+  },
+};
+
+$('#view3dBtn').addEventListener('click', () => {
+  const go = () => window.Viewer3D.open(window.Viewer3D.models.includes(state.productId) ? state.productId : undefined)
+    .catch((e) => { console.error(e); toast('3D view failed to start — WebGL may be disabled'); });
+  if (window.Viewer3D) { go(); return; }
+  toast('Loading 3D viewer…');
+  const s = document.createElement('script');
+  s.src = 'viewer3d.bundle.js';
+  s.onload = go;
+  s.onerror = () => toast('Could not load the 3D viewer (viewer3d.bundle.js missing — run npm run build)');
+  document.body.appendChild(s);
+});
+const v3dObserver = new MutationObserver(() => { if ($('#v3d').hidden) { syncObjectPanel(); render(); } });
+v3dObserver.observe($('#v3d'), { attributes: true, attributeFilter: ['hidden'] });
 
 /* ---------------- boot ---------------- */
 buildProductGrid();

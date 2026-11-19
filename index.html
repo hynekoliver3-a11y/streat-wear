@@ -21,6 +21,7 @@
     <button id="newBtn" class="btn ghost">New</button>
     <button id="galleryBtn" class="btn ghost">My designs</button>
     <button id="saveBtn" class="btn">Save</button>
+    <button id="view3dBtn" class="btn btn-3d" title="See it on a real 3D product, 360°">360° view</button>
     <div class="menu-wrap">
       <button id="exportBtn" class="btn primary">Export ▾</button>
       <div class="menu" id="exportMenu" hidden>
@@ -131,11 +132,48 @@
   <div class="gallery-grid" id="galleryGrid"></div>
 </dialog>
 
+<div class="v3d" id="v3d" hidden>
+  <header class="v3d-bar">
+    <button class="btn ghost" id="v3dClose">← Back to editor</button>
+    <div class="v3d-products" id="v3dProducts">
+      <button class="chip" data-model="tee">T-Shirt</button>
+      <button class="chip" data-model="sneaker">Sneaker</button>
+      <button class="chip" data-model="glb" title="Load a real 3D model of any product (.glb)">Your 3D model (.glb)</button>
+    </div>
+    <div class="v3d-actions">
+      <button class="btn" id="v3dUpload">Upload drawing</button>
+      <button class="btn" id="v3dShot">Screenshot</button>
+      <button class="btn primary" id="v3dRecord">Record 360° video</button>
+    </div>
+  </header>
+  <div class="v3d-stage" id="v3dStage">
+    <canvas id="v3dCanvas"></canvas>
+    <div class="v3d-status" id="v3dStatus" hidden></div>
+    <div class="v3d-empty" id="v3dEmpty" hidden>Nothing printed yet — <strong>Upload drawing</strong>, drop an image here, or draw in the editor.</div>
+    <div class="v3d-note" id="v3dNote" hidden></div>
+    <div class="v3d-bottom">
+      <div class="v3d-colors" id="v3dColors"></div>
+      <div class="v3d-angles" id="v3dAngles">
+        <button class="chip active" id="v3dSpin">⟳ Spin</button>
+        <button class="chip" data-angle="0">Front</button>
+        <button class="chip" data-angle="-90">Left</button>
+        <button class="chip" data-angle="180">Back</button>
+        <button class="chip" data-angle="90">Right</button>
+      </div>
+      <p class="v3d-help">Drag to rotate · scroll / pinch to zoom</p>
+      <p class="v3d-credit">Sneaker model: “Materials Variants Shoe” © Shopify, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> (resized textures)</p>
+    </div>
+  </div>
+  <input type="file" id="v3dDrawFile" accept="image/*" hidden>
+  <input type="file" id="v3dGlbFile" accept=".glb,model/gltf-binary" hidden>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <input type="file" id="imageFile" accept="image/*" hidden>
 <input type="file" id="productFile" accept="image/*" hidden>
 
+<script src="products-baked.js"></script>
 <script src="products.js"></script>
 <script src="app.js"></script>
 </body>

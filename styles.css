@@ -188,3 +188,43 @@ select, .text-input {
   .top-actions { margin-left: 0; width: 100%; }
   .design-name { flex: 1; }
 }
+
+/* ---------- 360° viewer ---------- */
+.btn-3d { background: #fff; color: #111; border-color: #fff; }
+body.v3d-open { overflow: hidden; }
+.v3d { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #111; }
+.v3d-bar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel);
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.v3d-products, .v3d-angles, .v3d-colors { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.v3d-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text); padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 13px;
+}
+.chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.v3d-stage { position: relative; flex: 1; min-height: 0; }
+.v3d-stage.dropping { outline: 3px dashed var(--accent); outline-offset: -10px; }
+#v3dCanvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#v3dCanvas:active { cursor: grabbing; }
+.v3d-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  background: linear-gradient(transparent, rgba(0,0,0,.35)); pointer-events: none;
+}
+.v3d-bottom > * { pointer-events: auto; }
+.v3d-angles .chip, .v3d-colors .chip { background: rgba(20,20,24,.85); backdrop-filter: blur(6px); }
+.v3d-angles .chip.active, .v3d-colors .chip.active { background: var(--accent); }
+.v3d-help { margin: 0; font-size: 12px; color: rgba(255,255,255,.85); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.v3d-status, .v3d-empty, .v3d-note {
+  position: absolute; left: 50%; transform: translateX(-50%); background: rgba(20,20,24,.9); color: var(--text);
+  padding: 10px 16px; border-radius: 10px; font-size: 13px; max-width: calc(100% - 32px); text-align: center;
+}
+.v3d-status { top: 50%; }
+.v3d-empty { top: 16px; }
+.v3d-note { top: 64px; color: #ffd60a; }
+@media (max-width: 960px) {
+  .v3d-actions { margin-left: 0; width: 100%; }
+  .v3d-actions .btn { flex: 1; padding: 7px 8px; }
+}
+.v3d-credit { margin: 0; font-size: 10px; color: rgba(255,255,255,.7); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.v3d-credit a { color: inherit; }
