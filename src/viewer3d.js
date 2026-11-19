@@ -5,8 +5,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { zipSync, strToU8 } from 'fflate';
 import tshirtGlb from '../models/tshirt.glb';
 import sneakerGlb from '../models/sneaker.glb';
+import crewneckGlb from '../models/crewneck.glb';
 
 const $ = (s) => document.querySelector(s);
 
@@ -14,6 +17,7 @@ const $ = (s) => document.querySelector(s);
 // The 3D model's bounding box (as seen from the front) is matched to this rect.
 const FRAMES = {
   tee: [40, 560, 66, 650],
+  crewneck: [20, 580, 105, 625],
   hoodie: [22, 578, 40, 628],
   joggers: [132, 468, 60, 650],
   cap: [95, 525, 190, 465],
@@ -29,6 +33,11 @@ const MODELS = {
     // projection: camera looks from +Z; editor "right" = +X
     views: { front: { dir: [0, 0, 1], right: [1, 0, 0] }, back: { dir: [0, 0, -1], right: [-1, 0, 0] } },
     upload: { view: 'front', x: 300, y: 250, size: 190 },
+  },
+  crewneck: {
+    name: 'Crewneck', data: crewneckGlb, print: 'crewneck', colorable: true,
+    views: { front: { dir: [0, 0, 1], right: [1, 0, 0] }, back: { dir: [0, 0, -1], right: [-1, 0, 0] } },
+    upload: { view: 'front', x: 300, y: 300, size: 190 },
   },
   sneaker: {
     name: 'Sneaker', data: sneakerGlb, print: 'sneaker', colorable: false,
@@ -361,13 +370,13 @@ function projectView(viewKey, canvas, frame) {
   turntable.rotation.y = 0;
   turntable.updateMatrixWorld(true);
   const mat = decalMaterial(tex);
-  let first = true;
   for (const m of current.meshes) {
+    if (/inside|lining|interior/i.test(m.material.name || '') || /inside|lining/i.test(m.name || '')) continue;
     const g = keepFacing(new DecalGeometry(m, pos, orient, size), dir);
     if (!g) continue;
     // bring world-space geometry back into turntable space so it rotates with the model
-    const dm = new THREE.Mesh(g, first ? mat : mat.clone());
-    first = false;
+    const dm = new THREE.Mesh(g, mat);
+    dm.name = 'print-' + viewKey;
     dm.renderOrder = 2;
     dm.receiveShadow = true;
     turntable.add(dm);
@@ -395,8 +404,11 @@ function keepFacing(g, dir) {
     for (const i of keep) for (let k = 0; k < 3; k++) for (let c = 0; c < attr.itemSize; c++) arr[o++] = attr.array[(i + k) * attr.itemSize + c];
     return new THREE.BufferAttribute(arr, attr.itemSize);
   };
-  out.setAttribute('position', copy(p));
-  out.setAttribute('normal', copy(n));
+  const pos = copy(p), nor = copy(n);
+  const eps = current ? current.bbox.getSize(new THREE.Vector3()).length() * 0.0012 : 0.001;
+  for (let i = 0; i < pos.array.length; i++) pos.array[i] += nor.array[i] * eps;
+  out.setAttribute('position', pos);
+  out.setAttribute('normal', nor);
   out.setAttribute('uv', copy(uv));
   g.dispose();
   return out;
@@ -495,14 +507,19 @@ function snap(angle) {
   frameCamera();
 }
 
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+async function download(blob, name) {
+  const A = api();
+  if (!A || !A.saveFile) return;
+  try {
+    await A.saveFile(blob, name);
+  } catch (e) {
+    if (e && e.code === 'rejected_extension') {
+      // this host only accepts certain file types (e.g. no .glb) — hand it over zipped
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const zip = zipSync({ [name]: bytes }, { level: 6 });
+      await A.saveFile(new Blob([zip]), name.replace(/\.[^.]+$/, '') + '.zip');
+    } else throw e;
+  }
 }
 
 function fileBase() {
@@ -551,6 +568,88 @@ async function record360() {
   download(new Blob(chunks, { type }), fileBase() + '-360.' + (type.startsWith('video/mp4') ? 'mp4' : 'webm'));
 }
 
+/* ---------------- downloads ---------------- */
+function canvasBytes(c) {
+  return new Promise((res) => c.toBlob((b) => b.arrayBuffer().then((a) => res(new Uint8Array(a))), 'image/png'));
+}
+
+// The designed product as a standard 3D file (glTF binary) that opens in Blender, Windows 3D Viewer, etc.
+async function exportGlb() {
+  const saved = turntable.rotation.y;
+  turntable.rotation.y = 0;
+  turntable.updateMatrixWorld(true);
+  try {
+    const res = await new GLTFExporter().parseAsync(turntable, { binary: true, maxTextureSize: 2048 });
+    return new Uint8Array(res);
+  } finally {
+    turntable.rotation.y = saved;
+    turntable.updateMatrixWorld(true);
+  }
+}
+
+async function renderAngles() {
+  const out = {};
+  const saved = turntable.rotation.y, savedSpin = autoRotate;
+  autoRotate = false;
+  snapTarget = null;
+  frameCamera();
+  for (const [name, deg] of [['front', 0], ['left', -90], ['back', 180], ['right', 90], ['three-quarter', 35]]) {
+    turntable.rotation.y = THREE.MathUtils.degToRad(deg);
+    controls.update();
+    renderer.render(scene, camera);
+    out[name] = await canvasBytes(renderer.domElement);
+  }
+  turntable.rotation.y = saved;
+  autoRotate = savedSpin;
+  return out;
+}
+
+async function busy(btn, label, fn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try { await fn(); }
+  catch (e) { console.error(e); setStatus('Download failed: ' + e.message); setTimeout(() => setStatus(''), 3000); }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
+
+async function downloadGlb() {
+  if (!current) return;
+  await busy($('#v3dGlb'), 'Exporting…', async () => {
+    download(new Blob([await exportGlb()], { type: 'model/gltf-binary' }), fileBase() + '.glb');
+  });
+}
+
+async function downloadPack() {
+  if (!current) return;
+  await busy($('#v3dPack'), 'Packing…', async () => {
+    const A = api();
+    const base = fileBase();
+    const pid = current.def.print || A.productId;
+    const files = {};
+    files[`${base}/3d/${base}.glb`] = await exportGlb();
+    const shots = await renderAngles();
+    for (const [k, v] of Object.entries(shots)) files[`${base}/3d-renders/${k}.png`] = v;
+    for (const view of Object.keys(current.def.views)) {
+      files[`${base}/print-files/${view}.png`] = await canvasBytes(A.getPrint(pid, view));
+      if (A.getMockup) files[`${base}/mockups/${view}.png`] = await canvasBytes(A.getMockup(pid, view));
+    }
+    files[`${base}/README.txt`] = strToU8([
+      `${base} — exported from DRIPLAB`,
+      '',
+      `3d/${base}.glb        The designed product as a 3D file (glTF binary). Opens in Blender,`,
+      '                      Windows 3D Viewer, https://gltf-viewer.donmccurdy.com and most 3D apps.',
+      '3d-renders/*.png      Studio renders of the 3D product from 5 angles.',
+      'print-files/*.png     Artwork only, transparent background, 1200x1400 px — send these to a printer.',
+      'mockups/*.png         Flat front/back mockups from the editor.',
+      '',
+      'Garment colour: ' + (current.def.colorable ? A.garment : 'model colourway'),
+    ].join('\n'));
+    const zip = zipSync(files, { level: 6 });
+    download(new Blob([zip], { type: 'application/zip' }), base + '.zip');
+  });
+}
+
 async function uploadDrawing(file) {
   if (!current || !api()) return;
   const src = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
@@ -574,6 +673,8 @@ function wire() {
   $('#v3dSpin').addEventListener('click', (e) => { autoRotate = !autoRotate; snapTarget = null; e.currentTarget.classList.toggle('active', autoRotate); });
   document.querySelectorAll('#v3dAngles [data-angle]').forEach((b) => b.addEventListener('click', () => snap(+b.dataset.angle * Math.PI / 180)));
   $('#v3dShot').addEventListener('click', screenshot);
+  $('#v3dGlb').addEventListener('click', downloadGlb);
+  $('#v3dPack').addEventListener('click', downloadPack);
   $('#v3dRecord').addEventListener('click', record360);
   $('#v3dClose').addEventListener('click', close);
   const stage = $('#v3dStage');
@@ -616,4 +717,4 @@ function close() {
   document.body.classList.remove('v3d-open');
 }
 
-window.Viewer3D = { open, close, refresh: refreshArt, models: Object.keys(MODELS) };
+window.Viewer3D = { open, close, refresh: refreshArt, downloadPack, downloadGlb, models: Object.keys(MODELS) };

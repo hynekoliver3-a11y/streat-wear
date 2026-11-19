@@ -228,3 +228,7 @@ body.v3d-open { overflow: hidden; }
 }
 .v3d-credit { margin: 0; font-size: 10px; color: rgba(255,255,255,.7); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 .v3d-credit a { color: inherit; }
+.confirm { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 18px; width: min(360px, calc(100vw - 32px)); }
+.confirm::backdrop { background: rgba(0,0,0,.6); }
+.confirm p { margin: 0 0 16px; font-weight: 600; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }

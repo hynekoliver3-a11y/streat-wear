@@ -63,6 +63,14 @@ const PRODUCTS = [
     ],
   },
   {
+    // shape comes from the real 3D model (products-baked.js)
+    id: 'crewneck', name: 'Crewneck',
+    views: [
+      { key: 'front', label: 'Front', shape: [], details: [] },
+      { key: 'back', label: 'Back', shape: [], details: [] },
+    ],
+  },
+  {
     id: 'hoodie', name: 'Hoodie',
     views: [
       { key: 'front', label: 'Front', shape: [HOODIE_BODY], details: [

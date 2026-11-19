@@ -28,6 +28,7 @@
         <button data-export="mockup">Mockup PNG — this side</button>
         <button data-export="all">Mockup PNG — all sides</button>
         <button data-export="print">Print file — artwork only</button>
+        <button data-export="pack">Product pack (.zip) — 3D file, renders, print files</button>
       </div>
     </div>
   </div>
@@ -137,12 +138,15 @@
     <button class="btn ghost" id="v3dClose">← Back to editor</button>
     <div class="v3d-products" id="v3dProducts">
       <button class="chip" data-model="tee">T-Shirt</button>
+      <button class="chip" data-model="crewneck">Crewneck</button>
       <button class="chip" data-model="sneaker">Sneaker</button>
       <button class="chip" data-model="glb" title="Load a real 3D model of any product (.glb)">Your 3D model (.glb)</button>
     </div>
     <div class="v3d-actions">
       <button class="btn" id="v3dUpload">Upload drawing</button>
       <button class="btn" id="v3dShot">Screenshot</button>
+      <button class="btn" id="v3dGlb" title="Your designed product as a 3D file">Download 3D file</button>
+      <button class="btn" id="v3dPack" title="3D file, renders, print files and mockups in one zip">Download all (.zip)</button>
       <button class="btn primary" id="v3dRecord">Record 360° video</button>
     </div>
   </header>
@@ -167,6 +171,14 @@
   <input type="file" id="v3dDrawFile" accept="image/*" hidden>
   <input type="file" id="v3dGlbFile" accept=".glb,model/gltf-binary" hidden>
 </div>
+
+<dialog id="confirmDlg" class="confirm">
+  <p id="confirmMsg"></p>
+  <div class="confirm-actions">
+    <button class="btn ghost" id="confirmCancel">Cancel</button>
+    <button class="btn primary" id="confirmOk">OK</button>
+  </div>
+</dialog>
 
 <div class="toast" id="toast" hidden></div>
 

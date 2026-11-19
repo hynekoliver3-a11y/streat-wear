@@ -5,10 +5,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import tshirt from '../models/tshirt.glb';
 import sneaker from '../models/sneaker.glb';
+import crewneck from '../models/crewneck.glb';
 
 const S = 2, W = 600, H = 700;
 const JOBS = {
   tee: { data: tshirt, frame: [40, 560, 66, 650], base: false },
+  crewneck: { data: crewneck, frame: [20, 580, 105, 625], base: false },
   sneaker: { data: sneaker, frame: [58, 585, 285, 548], base: true },
 };
 const VIEWS = { front: { dir: [0, 0, 1], right: [1, 0, 0] }, back: { dir: [0, 0, -1], right: [-1, 0, 0] } };
@@ -63,7 +65,7 @@ function sceneWith(root, mode, v) {
     if (!o.isMesh) return;
     const m = o.material;
     if (mode === 'mask') o.material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-    else if (mode === 'shade') o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, normalMap: m.normalMap, aoMap: m.aoMap, aoMapIntensity: 0.5, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+    else if (mode === 'shade') o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, map: m.map || null, normalMap: m.normalMap, aoMap: m.aoMap, aoMapIntensity: 0.5, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
     else { o.material = m.clone(); o.material.side = THREE.DoubleSide; }
   });
   scene.add(r);

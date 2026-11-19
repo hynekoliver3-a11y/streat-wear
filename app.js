@@ -1139,9 +1139,11 @@ $('#clearBtn').addEventListener('click', () => {
   toast('Cleared — Ctrl+Z to undo');
 });
 $('#newBtn').addEventListener('click', () => {
-  if (!confirm('Start a new design? Unsaved changes will be lost.')) return;
-  resetDesign();
-  toast('New design');
+  askConfirm('Start a new design? Unsaved changes will be lost.', 'Start new').then((ok) => {
+    if (!ok) return;
+    resetDesign();
+    toast('New design');
+  });
 });
 $('#designName').addEventListener('input', markDirty);
 
@@ -1154,16 +1156,54 @@ $$('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.
 function slug() {
   return ($('#designName').value.trim() || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'design';
 }
+// Save a file. Inside a claude.ai artifact the page must go through the viewer's
+// `downloads` capability; everywhere else (file://, GitHub Pages) a normal link download.
+let downloadsApi;
+function hostDownloads() {
+  if (downloadsApi === undefined) {
+    downloadsApi = window.claude && typeof window.claude.use === 'function'
+      ? window.claude.use('downloads').catch(() => null)
+      : Promise.resolve(null);
+  }
+  return downloadsApi;
+}
+async function saveFile(blob, name) {
+  const dl = await hostDownloads();
+  if (dl) {
+    try { await dl.save({ filename: name, data: blob }); return 'saved'; }
+    catch (e) {
+      if (e && e.code === 'declined') return 'declined';
+      if (e && e.code === 'rejected_extension') throw e;
+      if (e && e.code === 'rate_limited') { toast('Another download is waiting for your OK'); return 'declined'; }
+      // unavailable here: fall back to a link download
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return 'saved';
+}
+hostDownloads();
 function download(canvas, name) {
-  canvas.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  }, 'image/png');
+  canvas.toBlob((blob) => { saveFile(blob, name).catch((e) => toast('Download failed: ' + (e.message || e.code))); }, 'image/png');
+}
+
+// In-page confirm (native confirm() is blocked inside sandboxed frames).
+function askConfirm(message, okLabel = 'OK') {
+  return new Promise((resolve) => {
+    const d = $('#confirmDlg');
+    $('#confirmMsg').textContent = message;
+    $('#confirmOk').textContent = okLabel;
+    const done = (v) => { d.close(); $('#confirmOk').onclick = $('#confirmCancel').onclick = null; resolve(v); };
+    $('#confirmOk').onclick = () => done(true);
+    $('#confirmCancel').onclick = () => done(false);
+    d.oncancel = () => done(false);
+    d.showModal();
+  });
 }
 function copyCanvas(src) {
   const c = document.createElement('canvas');
@@ -1178,6 +1218,8 @@ function doExport(kind) {
     download(copyCanvas(scratchCv), `${base}-${viewDef().label.toLowerCase()}.png`);
   } else if (kind === 'print') {
     download(copyCanvas(composeArt(false)), `${base}-${viewDef().label.toLowerCase()}-print.png`);
+  } else if (kind === 'pack') {
+    open3D(() => window.Viewer3D.downloadPack());
   } else if (kind === 'all') {
     const cur = state.view;
     product().views.forEach((v, i) => {
@@ -1305,10 +1347,12 @@ function openGallery() {
     card.querySelector('strong').textContent = d.name;
     card.querySelector('[data-a=open]').addEventListener('click', async () => { gallery.close(); await loadDesign(d); toast('Opened “' + d.name + '”'); });
     card.querySelector('[data-a=del]').addEventListener('click', () => {
-      if (!confirm('Delete “' + d.name + '”?')) return;
-      writeDesigns(readDesigns().filter((x) => x.id !== d.id));
-      if (state.designId === d.id) state.designId = null;
-      openGallery();
+      askConfirm('Delete “' + d.name + '”?', 'Delete').then((ok) => {
+        if (!ok) return;
+        writeDesigns(readDesigns().filter((x) => x.id !== d.id));
+        if (state.designId === d.id) state.designId = null;
+        openGallery();
+      });
     });
     grid.appendChild(card);
   });
@@ -1372,6 +1416,7 @@ function toast(msg) {
 
 /* ---------------- 3D / 360° bridge ---------------- */
 window.DripLab = {
+  saveFile,
   get garment() { return state.garment; },
   get productId() { return state.productId; },
   get productName() { return product().name; },
@@ -1386,6 +1431,21 @@ window.DripLab = {
     const c = copyCanvas(composeArt(false));
     state.productId = saved.p;
     state.view = saved.v;
+    buildMask();
+    return c;
+  },
+  // Flat editor mockup of a product side.
+  getMockup(pid, view) {
+    const saved = { p: state.productId, v: state.view, sel: state.selectedId };
+    state.productId = pid;
+    state.view = view;
+    state.selectedId = null;
+    buildMask();
+    drawScene(scratchCv.getContext('2d'), false);
+    const c = copyCanvas(scratchCv);
+    state.productId = saved.p;
+    state.view = saved.v;
+    state.selectedId = saved.sel;
     buildMask();
     return c;
   },
@@ -1405,8 +1465,9 @@ window.DripLab = {
   },
 };
 
-$('#view3dBtn').addEventListener('click', () => {
+function open3D(then) {
   const go = () => window.Viewer3D.open(window.Viewer3D.models.includes(state.productId) ? state.productId : undefined)
+    .then(() => then && then())
     .catch((e) => { console.error(e); toast('3D view failed to start — WebGL may be disabled'); });
   if (window.Viewer3D) { go(); return; }
   toast('Loading 3D viewer…');
@@ -1415,7 +1476,8 @@ $('#view3dBtn').addEventListener('click', () => {
   s.onload = go;
   s.onerror = () => toast('Could not load the 3D viewer (viewer3d.bundle.js missing — run npm run build)');
   document.body.appendChild(s);
-});
+}
+$('#view3dBtn').addEventListener('click', () => open3D());
 const v3dObserver = new MutationObserver(() => { if ($('#v3d').hidden) { syncObjectPanel(); render(); } });
 v3dObserver.observe($('#v3d'), { attributes: true, attributeFilter: ['hidden'] });
 

@@ -1,6 +1,8 @@
 # DRIPLAB — streetwear designer
 
-Pick a product (T-shirt, hoodie, joggers, cap, sneaker, tote) or upload your own, draw on it, then see it on a real 3D garment in a 360° view.
+Pick a product (T-shirt, crewneck, hoodie, joggers, cap, sneaker, tote) or upload your own, draw on it, then see it on a real 3D blank in a 360° view.
+
+Real 3D blanks: **T-shirt, crewneck sweatshirt and sneaker**. The hoodie, joggers, cap and tote are 2D-only until a 3D model is added; you can load your own .glb of any product in the 360° view.
 
 **Run it:** open `index.html` in a browser. No server or install needed; it works straight from disk.
 
@@ -10,6 +12,8 @@ Click **360° view** in the top bar.
 - **Upload drawing:** add a photo or scan of a drawing. Plain paper backgrounds are removed automatically, so only the ink is printed.
 - Drag to rotate, scroll or pinch to zoom, and use the Front / Left / Back / Right buttons, or let it spin.
 - **Record 360° video** saves a 6-second turntable clip (MP4 or WebM, depending on the browser). **Screenshot** saves a PNG.
+- **Download 3D file:** your designed product as a `.glb` 3D file. It opens in Blender, Windows 3D Viewer and most 3D apps.
+- **Download all (.zip):** the 3D file, 5 studio renders, the print files and the flat mockups in one zip. The editor's Export menu also has this as **Product pack**.
 - **Your 3D model (.glb):** load a real 3D model of any product (a scan or a bought model) and your artwork is printed on it.
 
 In the 2D editor, the T-shirt and sneaker are renders of those same 3D models, so what you draw lines up with the 360° view.
