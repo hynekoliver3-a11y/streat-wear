@@ -6,6 +6,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import dracoWrapper from './vendor/draco_wasm_wrapper.txt';
+import dracoWasm from './vendor/draco_decoder.wasm';
 import { zipSync, strToU8 } from 'fflate';
 import tshirtGlb from '../models/tshirt.glb';
 import sneakerGlb from '../models/sneaker.glb';
@@ -55,6 +59,11 @@ let recording = false;
 let lastT = 0;
 let opened = false;
 const loader = new GLTFLoader();
+// Downloaded models are often compressed; both decoders ship inside this bundle (no network needed).
+const draco = new DRACOLoader();
+draco._loadLibrary = (url, type) => Promise.resolve(type === 'arraybuffer' ? dracoWasm.slice().buffer : dracoWrapper);
+loader.setDRACOLoader(draco);
+loader.setMeshoptDecoder(MeshoptDecoder);
 
 function api() { return window.DripLab; }
 
@@ -238,9 +247,13 @@ async function loadModel(key, bytes, def) {
       old.dispose();
     }
   } else if (def.colorable) {
+    // models with their own color textures (denim, prints) keep them; plain ones take the garment color
+    const textured = meshes.some((m) => m.material && m.material.map);
+    if (textured) def.colorable = false;
     for (const m of meshes) {
       m.material = m.material.clone();
-      m.material.color = new THREE.Color(garment);
+      if (!textured) m.material.color = new THREE.Color(garment);
+      if (m.geometry.attributes.color) m.material.vertexColors = true;
       m.material.side = THREE.DoubleSide;
     }
   }
@@ -254,7 +267,7 @@ async function loadModel(key, bytes, def) {
   turntable.add(root);
   root.updateMatrixWorld(true);
   const bbox = new THREE.Box3().setFromObject(root);
-  current = { key, def, root, meshes, bbox, decals: [], variants };
+  current = { key, def, root, meshes, bbox, decals: [], variants, data: bytes };
   frameCamera();
   buildVariantUI();
   await refreshArt();
@@ -420,6 +433,7 @@ async function refreshArt() {
   const A = api();
   if (!A) return;
   const printKey = current.def.print || A.productId;
+  if (current.key === 'glb') $('#v3dSaveBlank').hidden = false;
   const frame = FRAMES[printKey] || FRAMES[A.productId] || FRAMES.custom;
   let any = false;
   for (const view of Object.keys(current.def.views)) {
@@ -438,6 +452,7 @@ async function refreshArt() {
 function buildVariantUI() {
   const box = $('#v3dColors');
   box.innerHTML = '';
+  box.closest('.sect').hidden = !(current.variants || (current.def.colorable && api()));
   if (current.variants) {
     current.variants.names.forEach((n, i) => {
       const b = document.createElement('button');
@@ -484,6 +499,7 @@ async function selectModel(key) {
   const def = MODELS[key];
   if (!def) return;
   setProductButtons(key);
+  $('#v3dSaveBlank').hidden = true;
   if (api() && api().setProduct) api().setProduct(key);
   try { await loadModel(key, def.data, def); }
   catch (e) { console.error(e); setStatus('Could not load the 3D model'); }
@@ -493,11 +509,12 @@ async function loadCustomGlb(file) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const A = api();
   const def = {
-    name: file.name, print: A ? A.productId : 'custom', colorable: true, fabric: false,
+    name: file.name, print: A ? A.productId : 'custom', colorable: true, fabric: false, fromFile: file.name,
     views: { front: { dir: [0, 0, 1], right: [1, 0, 0] }, back: { dir: [0, 0, -1], right: [-1, 0, 0] } },
     upload: { view: 'front', x: 300, y: 260, size: 180 },
   };
   setProductButtons('glb');
+  $('#blankName').value = file.name.replace(/\.glb$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 40);
   try { await loadModel('glb', buf, def); }
   catch (e) { console.error(e); setStatus('That file is not a valid .glb model'); }
 }
@@ -633,7 +650,8 @@ async function downloadPack() {
     const shots = await renderAngles();
     for (const [k, v] of Object.entries(shots)) files[`${base}/3d-renders/${k}.png`] = v;
     for (const view of Object.keys(current.def.views)) {
-      files[`${base}/print-files/${view}.png`] = await canvasBytes(A.getPrint(pid, view));
+      const pf = A.getPrintFile ? A.getPrintFile(pid, view) : A.getPrint(pid, view);
+      files[`${base}/print-files/${view}${pf.inches ? '-' + pf.inches + '-' + pf.dpi + 'dpi' : ''}.png`] = await canvasBytes(pf);
       if (A.getMockup) files[`${base}/mockups/${view}.png`] = await canvasBytes(A.getMockup(pid, view));
     }
     files[`${base}/README.txt`] = strToU8([
@@ -642,7 +660,7 @@ async function downloadPack() {
       `3d/${base}.glb        The designed product as a 3D file (glTF binary). Opens in Blender,`,
       '                      Windows 3D Viewer, https://gltf-viewer.donmccurdy.com and most 3D apps.',
       '3d-renders/*.png      Studio renders of the 3D product from 5 angles.',
-      'print-files/*.png     Artwork only, transparent background, 1200x1400 px — send these to a printer.',
+      'print-files/*.png     Print area only, transparent background, 300 DPI — send these to a printer.',
       'mockups/*.png         Flat front/back mockups from the editor.',
       '',
       'Garment colour: ' + (current.def.colorable ? A.garment : 'model colourway'),
@@ -680,6 +698,8 @@ function wire() {
   }));
   $('#v3dSpin').addEventListener('click', () => angleBtns.forEach((x) => x.classList.remove('active')));
   $('#v3dShot').addEventListener('click', screenshot);
+  $('#blankSave').addEventListener('click', saveBlank);
+  syncModelList();
   $('#v3dGlb').addEventListener('click', downloadGlb);
   $('#v3dPack').addEventListener('click', downloadPack);
   $('#v3dRecord').addEventListener('click', record360);
@@ -724,4 +744,221 @@ function close() {
   document.body.classList.remove('v3d-open');
 }
 
-window.Viewer3D = { open, close, refresh: refreshArt, downloadPack, downloadGlb, models: Object.keys(MODELS) };
+
+/* ---------------- your own blanks (saved .glb models) ---------------- */
+const BLANK_HEIGHT_IN = { top: 28, bottom: 41, shorts: 20, other: 24 };
+const STD_VIEWS = { front: { dir: [0, 0, 1], right: [1, 0, 0] }, back: { dir: [0, 0, -1], right: [-1, 0, 0] } };
+
+// Register a saved blank with the 3D studio (data = Uint8Array of the .glb).
+function addBlankModel(rec) {
+  MODELS[rec.id] = {
+    name: rec.name, data: rec.glb, print: rec.id, colorable: rec.colorable, user: true,
+    views: STD_VIEWS,
+    upload: { view: 'front', x: rec.print.front[0] + rec.print.front[2] / 2, y: rec.print.front[1] + rec.print.front[3] * 0.35, size: Math.min(180, rec.print.front[2]) },
+  };
+  FRAMES[rec.id] = rec.frame;
+  if (wired) syncModelList();
+}
+function removeBlankModel(id) {
+  delete MODELS[id];
+  delete FRAMES[id];
+  if (wired) syncModelList();
+}
+
+function syncModelList() {
+  const list = $('#v3dProducts');
+  list.querySelectorAll('[data-user]').forEach((n) => n.remove());
+  const glbBtn = list.querySelector('[data-model=glb]');
+  for (const [id, m] of Object.entries(MODELS)) {
+    if (!m.user) continue;
+    const row = document.createElement('div');
+    row.className = 'model-row';
+    row.dataset.user = '1';
+    const b = document.createElement('button');
+    b.dataset.model = id;
+    b.innerHTML = '<strong></strong><small>Your blank · saved in this browser</small>';
+    b.querySelector('strong').textContent = m.name;
+    b.addEventListener('click', () => selectModel(id));
+    const del = document.createElement('button');
+    del.className = 'model-del';
+    del.title = 'Remove this blank';
+    del.setAttribute('aria-label', 'Remove ' + m.name);
+    del.textContent = '×';
+    del.addEventListener('click', () => api() && api().removeBlank(id));
+    row.append(b, del);
+    list.insertBefore(row, glbBtn);
+  }
+  setProductButtons(current ? current.key : '');
+}
+
+// Moore-neighbour trace of every solid region in a binary grid, simplified to an SVG path.
+function tracePaths(bin, w, h, scale) {
+  const seen = new Uint8Array(w * h);
+  const paths = [];
+  const N = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && bin[y * w + x];
+  for (let i = 0; i < w * h; i++) {
+    if (!bin[i] || seen[i]) continue;
+    // label the region
+    const stack = [i];
+    seen[i] = 1;
+    let area = 0;
+    while (stack.length) {
+      const j = stack.pop();
+      area++;
+      const x = j % w, y = (j / w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, k = ny * w + nx;
+        if (on(nx, ny) && !seen[k]) { seen[k] = 1; stack.push(k); }
+      }
+    }
+    if (area < 120) continue;
+    // i is this region's first pixel in scan order: trace its outer boundary
+    const sx = i % w, sy = (i / w) | 0;
+    const pts = [[sx, sy]];
+    let cx = sx, cy = sy, dir = 6; // came from above
+    for (let guard = 0; guard < w * h * 4; guard++) {
+      let found = false;
+      for (let t = 0; t < 8; t++) {
+        const d = (dir + 6 + t) % 8; // start looking left of the way we came
+        const nx = cx + N[d][0], ny = cy + N[d][1];
+        if (on(nx, ny)) { cx = nx; cy = ny; dir = d; found = true; break; }
+      }
+      if (!found || (cx === sx && cy === sy)) break;
+      pts.push([cx, cy]);
+    }
+    const simple = rdp(pts, 0.9);
+    if (simple.length > 2) paths.push('M ' + simple.map(([x, y]) => `${+(x * scale).toFixed(1)} ${+(y * scale).toFixed(1)}`).join(' L ') + ' Z');
+  }
+  return paths.join(' ');
+}
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const [ax, ay] = pts[a], [bx, by] = pts[b];
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    let best = -1, bi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / len;
+      if (d > best) { best = d; bi = i; }
+    }
+    if (best > eps) { keep[bi] = 1; stack.push([a, bi], [bi, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+// Render the loaded model into the 600x700 editor space: outline, fabric shading and (if textured) its colors.
+async function bakeCurrent(kind) {
+  const W = 600, H = 700, S = 2;
+  const saved = turntable.rotation.y;
+  turntable.rotation.y = 0;
+  turntable.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(current.root);
+  const size = box.getSize(new THREE.Vector3());
+  const k = Math.min(560 / size.x, 620 / size.y);
+  const fw = size.x * k, fh = size.y * k;
+  const frame = [300 - fw / 2, 300 + fw / 2, 350 - fh / 2, 350 + fh / 2];
+  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+  r.setPixelRatio(1);
+  r.setSize(W * S, H * S);
+  r.outputColorSpace = THREE.SRGBColorSpace;
+  const env = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
+  const textured = !current.def.colorable;
+  const grab = () => { const c = document.createElement('canvas'); c.width = W * S; c.height = H * S; c.getContext('2d').drawImage(r.domElement, 0, 0); return c; };
+  const out = {};
+  for (const [vk, v] of Object.entries(STD_VIEWS)) {
+    const dir = new THREE.Vector3(...v.dir), right = new THREE.Vector3(...v.right), up = new THREE.Vector3(0, 1, 0);
+    const pts = [];
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) pts.push(new THREE.Vector3(x, y, z));
+    const ext = (a) => { const q = pts.map((p) => p.dot(a)); return [Math.min(...q), Math.max(...q)]; };
+    const [r0] = ext(right), [, u1] = ext(up);
+    const kx = size.x / fw, ky = size.y / fh;
+    const left = r0 - frame[0] * kx, top = u1 + frame[2] * ky;
+    const cam = new THREE.OrthographicCamera(left, left + W * kx, top, top - H * ky, -50, 50);
+    const c = box.getCenter(new THREE.Vector3());
+    cam.position.copy(c.clone().add(dir.clone().multiplyScalar(size.length() * 2)));
+    cam.position.y = 0;
+    cam.position.x = dir.x ? cam.position.x : 0;
+    cam.up.set(0, 1, 0);
+    cam.lookAt(cam.position.clone().sub(dir));
+    const scene = (mode) => {
+      const sc = new THREE.Scene();
+      if (mode !== 'mask') {
+        sc.environment = env;
+        sc.environmentIntensity = 0.9;
+        const key = new THREE.DirectionalLight(0xffffff, 1.2);
+        key.position.set(1.2 * v.dir[2], 2.4, 3 * v.dir[2]);
+        sc.add(key);
+      }
+      const root = current.root.clone(true);
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        const m = o.material;
+        if (mode === 'mask') o.material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        else if (mode === 'shade') o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, normalMap: m.normalMap || null, aoMap: m.aoMap || null, aoMapIntensity: 0.5, roughness: 0.9, side: THREE.DoubleSide, vertexColors: !!o.geometry.attributes.color });
+      });
+      root.applyMatrix4(current.root.parent.matrixWorld);
+      sc.add(root);
+      return sc;
+    };
+    r.setClearColor(0x000000, 0);
+    r.toneMapping = THREE.NoToneMapping;
+    r.render(scene('mask'), cam);
+    const mask = grab();
+    r.toneMapping = THREE.NeutralToneMapping;
+    r.render(scene('shade'), cam);
+    const shade = grab();
+    const md = mask.getContext('2d').getImageData(0, 0, W * S, H * S).data;
+    const sx = shade.getContext('2d');
+    const sd = sx.getImageData(0, 0, W * S, H * S);
+    const lum = [];
+    for (let i = 0; i < md.length; i += 4) if (md[i + 3] > 200) lum.push(sd.data[i]);
+    lum.sort((a, b) => a - b);
+    const p80 = lum[Math.floor(lum.length * 0.8)] || 255;
+    for (let i = 0; i < sd.data.length; i += 4) {
+      const g = md[i + 3] > 10 ? Math.min(255, Math.round((sd.data[i] * 255) / p80)) : 255;
+      sd.data[i] = sd.data[i + 1] = sd.data[i + 2] = g;
+      sd.data[i + 3] = 255;
+    }
+    sx.putImageData(sd, 0, 0);
+    // outline at 1 editor unit resolution
+    const bin = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) bin[y * W + x] = md[((y * S) * W * S + x * S) * 4 + 3] > 127 ? 1 : 0;
+    const view = { shape: tracePaths(bin, W, H, 1), shade: shade.toDataURL('image/jpeg', 0.86) };
+    if (textured) {
+      r.setClearColor(0xffffff, 1);
+      r.render(scene('color'), cam);
+      view.base = grab().toDataURL('image/jpeg', 0.88);
+    }
+    out[vk] = view;
+  }
+  r.dispose();
+  env.dispose();
+  turntable.rotation.y = saved;
+  turntable.updateMatrixWorld(true);
+  const ppi = fh / (BLANK_HEIGHT_IN[kind] || 24);
+  return { frame, ppi, baked: out, colorable: !textured };
+}
+
+async function saveBlank() {
+  if (!current || current.key !== 'glb' || !api()) return;
+  const name = ($('#blankName').value || '').trim() || 'My blank';
+  const kind = $('#blankKind').value;
+  const btn = $('#blankSave');
+  await busy(btn, 'Saving…', async () => {
+    const b = await bakeCurrent(kind);
+    const id = 'u' + Date.now().toString(36);
+    const rec = { id, name, kind, glb: current.data, ...b };
+    const ok = await api().addBlank(rec);
+    if (!ok) return;
+    addBlankModel(rec);
+    $('#v3dSaveBlank').hidden = true;
+    await selectModel(id);
+  });
+}
+
+window.Viewer3D = { open, close, refresh: refreshArt, downloadPack, downloadGlb, addBlankModel, removeBlankModel, get models() { return Object.keys(MODELS); } };

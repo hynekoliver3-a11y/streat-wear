@@ -8,7 +8,7 @@ await build({
   format: 'iife',
   minify: true,
   target: 'es2020',
-  loader: { '.glb': 'binary' },
+  loader: { '.glb': 'binary', '.wasm': 'binary', '.txt': 'text' },
   outfile: 'viewer3d.bundle.js',
   legalComments: 'none',
   logLevel: 'info',

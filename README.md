@@ -12,11 +12,13 @@ Design streetwear on real 3D blanks, check it from every angle, then download pr
    - **Graphics:** 16 vector graphics that take your paint color, and can be recolored later.
    - **Upload:** a logo, image, or a photo or scan of a drawing. Plain paper backgrounds are removed automatically.
    - **Print-area guide:** a dashed box shows the real printable area (12 × 16 in on shirts), and the panel shows each element's size in inches.
-3. **3D Preview.** Spin the product, snap to front, left, back or right, change the garment color or sneaker colorway, and record a 6-second 360° video.
-4. **Download.**
+   - **Print area:** choose a size preset (standard 12 × 16, large, maximum 15 × 18, left chest, chest strip, upper back; leg, thigh and hip for pants), type a width and height in inches, or press **Adjust on canvas** to drag and resize it. **Print only inside the area** trims artwork to it.
+3. **Add your own blanks.** In 3D Preview choose **Load a 3D model…** (a .glb file of jeans, sweatpants, shorts, a hoodie or anything else), then **Save as blank**. The app renders its front and back for the designer, traces its outline, sets a print area in real inches and keeps it in your browser. Remove it with the × next to its name.
+4. **3D Preview.** Spin the product, snap to front, left, back or right, change the garment color or sneaker colorway, and record a 6-second 360° video.
+5. **Download.**
    - **Product pack (.zip):** the 3D file, 5 studio renders, print files and mockups.
    - **3D file (.glb):** opens in Blender, Windows 3D Viewer and most 3D apps.
-   - **Print file:** artwork only on a transparent background, 1200 × 1400 px.
+   - **Print file:** the print area only, at its real size and 300 DPI on a transparent background. Text and graphics are redrawn at full resolution, so they stay sharp.
    - **Mockups:** flat product images, PNG.
 
 Designs autosave in the browser, and **Save** keeps them in **File → My designs**. Press `?` in the app for keyboard shortcuts.

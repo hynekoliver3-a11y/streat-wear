@@ -31,7 +31,7 @@ const SNEAKER_DETAILS = [
 // Real 3D blanks only. Their 2D silhouettes and shading come from products-baked.js.
 const PRODUCTS = [
   {
-    id: 'tee', name: 'T-shirt', blurb: 'Short sleeve',
+    id: 'tee', name: 'T-shirt', blurb: 'Short sleeve', kind: 'top',
     // print areas in editor units; ppi = editor units per inch on this blank
     ppi: 14,
     print: { front: [216, 140, 168, 224], back: [216, 122, 168, 224] },
@@ -44,7 +44,7 @@ const PRODUCTS = [
   },
   {
     // shape comes from the real 3D model (products-baked.js)
-    id: 'crewneck', name: 'Crewneck', blurb: 'Sweatshirt',
+    id: 'crewneck', name: 'Crewneck', blurb: 'Sweatshirt', kind: 'top',
     ppi: 13.6,
     print: { front: [218, 165, 164, 218], back: [218, 140, 164, 218] },
     views: [
@@ -53,7 +53,7 @@ const PRODUCTS = [
     ],
   },
   {
-    id: 'sneaker', name: 'Sneaker', blurb: 'Knit runner',
+    id: 'sneaker', name: 'Sneaker', blurb: 'Knit runner', kind: 'shoe',
     ppi: 48,
     print: { front: [200, 392, 240, 84], back: [160, 392, 240, 84] },
     views: [
@@ -62,3 +62,34 @@ const PRODUCTS = [
     ],
   },
 ];
+
+// Print-area presets (inches). anchor: where the area sits relative to the blank's default area.
+const PRINT_PRESETS = {
+  top: [
+    { id: 'standard', name: 'Standard 12 × 16 in', w: 12, h: 16 },
+    { id: 'large', name: 'Large 14 × 16 in', w: 14, h: 16 },
+    { id: 'max', name: 'Maximum 15 × 18 in', w: 15, h: 18 },
+    { id: 'chest', name: 'Left chest 4 × 4 in', w: 4, h: 4, anchor: 'leftchest', views: ['front'] },
+    { id: 'strip', name: 'Chest strip 11 × 3 in', w: 11, h: 3 },
+    { id: 'yoke', name: 'Upper back 12 × 4 in', w: 12, h: 4, views: ['back'] },
+  ],
+  bottom: [
+    { id: 'leg', name: 'Leg 4 × 12 in', w: 4, h: 12, anchor: 'leftleg' },
+    { id: 'thigh', name: 'Thigh 4 × 4 in', w: 4, h: 4, anchor: 'leftleg' },
+    { id: 'hip', name: 'Hip 3 × 3 in', w: 3, h: 3, anchor: 'leftleg' },
+  ],
+  shorts: [
+    { id: 'thigh', name: 'Thigh 4 × 4 in', w: 4, h: 4, anchor: 'leftleg' },
+    { id: 'legs', name: 'Leg 4 × 6 in', w: 4, h: 6, anchor: 'leftleg' },
+    { id: 'hip', name: 'Hip 3 × 3 in', w: 3, h: 3, anchor: 'leftleg' },
+  ],
+  other: [
+    { id: 'large', name: 'Large 10 × 10 in', w: 10, h: 10 },
+    { id: 'medium', name: 'Medium 6 × 6 in', w: 6, h: 6 },
+    { id: 'small', name: 'Small 3 × 3 in', w: 3, h: 3 },
+  ],
+  shoe: [
+    { id: 'side', name: 'Side panel 5 × 1.75 in', w: 5, h: 1.75 },
+    { id: 'small', name: 'Small logo 2 × 1 in', w: 2, h: 1 },
+  ],
+};

@@ -33,6 +33,7 @@ const HINTS = {
   rect: 'Rectangle — drag. Shift for a square. Toggle "Filled shapes" in Paint.',
   ellipse: 'Ellipse — drag. Shift for a circle.',
   text: 'Text — click on the product to place text, or pick a style under Add text.',
+  area: 'Print area — drag inside to move it, drag a corner to resize (Shift keeps the shape). Press Done when finished.',
   picker: 'Picker — click anywhere to grab a color.',
 };
 
@@ -74,6 +75,8 @@ const state = {
   fillShapes: false,
   clip: true,
   guides: true,
+  areaOverrides: {},    // productId -> view -> [x, y, w, h] in editor units
+  areaClip: false,      // print only inside the print area
   mirror: false,
   selectedId: null,
   designId: null,
@@ -288,6 +291,13 @@ function composeArt(includeLive = true) {
     t.drawImage(maskCv, 0, 0);
     t.globalCompositeOperation = 'source-over';
   }
+  const pa = state.areaClip ? printArea() : null;
+  if (pa) {
+    t.globalCompositeOperation = 'destination-in';
+    t.fillStyle = '#000';
+    t.fillRect(pa.x * S, pa.y * S, pa.w * S, pa.h * S);
+    t.globalCompositeOperation = 'source-over';
+  }
   return tmpCv;
 }
 
@@ -394,17 +404,52 @@ function drawScene(c, ui, flat = false) {
 }
 
 const ACCENT = '#ff4f12';
-function printArea(pid = state.productId, view = state.view) {
+function defaultArea(pid, view) {
   const p = PRODUCTS.find((x) => x.id === pid);
   if (!p || !p.print || !p.print[view]) return null;
-  const [x, y, w, h] = p.print[view];
-  return { x, y, w, h, ppi: p.ppi };
+  return { p, rect: p.print[view] };
 }
+function printArea(pid = state.productId, view = state.view) {
+  const d = defaultArea(pid, view);
+  if (!d) return null;
+  const o = state.areaOverrides[pid] && state.areaOverrides[pid][view];
+  const [x, y, w, h] = o || d.rect;
+  return { x, y, w, h, ppi: d.p.ppi };
+}
+function setArea(rect, pid = state.productId, view = state.view) {
+  if (!state.areaOverrides[pid]) state.areaOverrides[pid] = {};
+  state.areaOverrides[pid][view] = rect.map((v) => Math.round(v * 10) / 10);
+  markDirty();
+  syncAreaPanel();
+  render();
+}
+// Rect for a preset, placed relative to the blank's default area.
+function presetRect(preset, pid = state.productId, view = state.view) {
+  const d = defaultArea(pid, view);
+  const [dx, dy, dw] = d.rect;
+  const w = preset.w * d.p.ppi, h = preset.h * d.p.ppi;
+  let cx = dx + dw / 2, top = dy;
+  if (preset.anchor === 'leftchest') { cx = dx + dw / 2 + 3.5 * d.p.ppi; top = dy + 0.5 * d.p.ppi; }
+  if (preset.anchor === 'leftleg') { cx = dx + dw / 2; }
+  return [cx - w / 2, top, w, h];
+}
+const areaCorners = (pa) => [[pa.x, pa.y], [pa.x + pa.w, pa.y], [pa.x, pa.y + pa.h], [pa.x + pa.w, pa.y + pa.h]];
 const inches = (v, ppi) => (v / ppi).toFixed(v / ppi < 10 ? 1 : 0);
 function drawUI(c) {
   const u = uiUnit();
   const o = selected();
-  const pa = state.guides ? printArea() : null;
+  const pa = state.guides || state.tool === 'area' ? printArea() : null;
+  if (pa && state.tool === 'area') {
+    c.save();
+    c.fillStyle = 'rgba(255,79,18,0.07)';
+    c.fillRect(pa.x, pa.y, pa.w, pa.h);
+    c.fillStyle = '#fff';
+    c.strokeStyle = ACCENT;
+    c.lineWidth = 1.5 * u;
+    const hs = 11 * u;
+    for (const [hx, hy] of areaCorners(pa)) { c.fillRect(hx - hs / 2, hy - hs / 2, hs, hs); c.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs); }
+    c.restore();
+  }
   if (pa) {
     c.save();
     c.lineWidth = 1.2 * u;
@@ -850,6 +895,16 @@ cv.addEventListener('pointerdown', (e) => {
     drag = null;
     return;
   }
+  if (t === 'area') {
+    const pa = printArea();
+    if (!pa) { drag = null; return; }
+    const tol = 14 * uiUnit();
+    const ci = areaCorners(pa).findIndex(([hx, hy]) => Math.abs(p.x - hx) < tol && Math.abs(p.y - hy) < tol);
+    if (ci >= 0) { Object.assign(drag, { mode: 'area-resize', corner: ci, orig: pa }); return; }
+    if (p.x >= pa.x && p.x <= pa.x + pa.w && p.y >= pa.y && p.y <= pa.y + pa.h) { Object.assign(drag, { mode: 'area-move', orig: pa }); return; }
+    drag = null;
+    return;
+  }
   if (t === 'fill') { drag = null; floodFill(p); return; }
   if (t === 'picker') { drag = null; pickColor(p); return; }
   if (t === 'eraser') {
@@ -878,6 +933,13 @@ cv.addEventListener('pointermove', (e) => {
   const p = toLogical(e);
   state.hover = p;
   if (!drag || e.pointerId !== drag.id) {
+    if (state.tool === 'area') {
+      const pa = printArea();
+      const tol = 14 * uiUnit();
+      const onCorner = pa && areaCorners(pa).some(([hx, hy]) => Math.abs(p.x - hx) < tol && Math.abs(p.y - hy) < tol);
+      const inside = pa && p.x >= pa.x && p.x <= pa.x + pa.w && p.y >= pa.y && p.y <= pa.y + pa.h;
+      cv.style.cursor = onCorner ? 'nwse-resize' : inside ? 'move' : 'default';
+    }
     if (state.tool === 'select') {
       const o = selected();
       const h = o && hitHandle(o, p);
@@ -888,6 +950,22 @@ cv.addEventListener('pointermove', (e) => {
   }
   const t = state.tool;
   const { mode, obj, orig } = drag;
+  if (mode === 'area-move') {
+    setArea([orig.x + p.x - drag.start.x, orig.y + p.y - drag.start.y, orig.w, orig.h]);
+    drag.last = p;
+    return;
+  }
+  if (mode === 'area-resize') {
+    const min = orig.ppi; // 1 inch
+    const ax = drag.corner % 2 === 0 ? orig.x + orig.w : orig.x;   // fixed opposite corner
+    const ay = drag.corner < 2 ? orig.y + orig.h : orig.y;
+    let w = Math.max(min, Math.abs(p.x - ax)), h = Math.max(min, Math.abs(p.y - ay));
+    if (e.shiftKey) { const k = Math.max(w / orig.w, h / orig.h); w = orig.w * k; h = orig.h * k; }
+    const x = p.x < ax ? ax - w : ax, y = p.y < ay ? ay - h : ay;
+    setArea([x, y, w, h]);
+    drag.last = p;
+    return;
+  }
   if (mode === 'move') { obj.x = orig.x + p.x - drag.start.x; obj.y = orig.y + p.y - drag.start.y; }
   else if (mode === 'scale') { obj.scale = Math.max(0.05, orig.scale * (Math.hypot(p.x - obj.x, p.y - obj.y) / drag.d0)); }
   else if (mode === 'rotate') {
@@ -949,8 +1027,9 @@ function setTool(t) {
   state.tool = t;
   $$('#toolbar [data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   $('#hint').textContent = HINTS[t] || '';
-  cv.style.cursor = { select: 'default', text: 'text', picker: 'copy', fill: 'cell' }[t] || 'crosshair';
+  cv.style.cursor = { select: 'default', text: 'text', picker: 'copy', fill: 'cell', area: 'default' }[t] || 'crosshair';
   syncObjectPanel();
+  syncAreaPanel();
   render();
 }
 $$('#toolbar [data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
@@ -1018,7 +1097,8 @@ function productCards(el, onPick, onCustom) {
     const b = document.createElement('button');
     b.className = 'product';
     b.dataset.id = p.id;
-    b.innerHTML = `<span class="thumb">${productThumb(p)}</span><span class="pname">${p.name}</span><span class="pmeta">${p.blurb || ''} · 3D</span>`;
+    b.innerHTML = `<span class="thumb">${productThumb(p)}</span><span class="pname"></span><span class="pmeta">${p.blurb || ''} · 3D${p.user ? ' · yours' : ''}</span>`;
+    b.querySelector('.pname').textContent = p.name;
     b.addEventListener('click', () => onPick(p.id));
     el.appendChild(b);
   });
@@ -1042,7 +1122,7 @@ function setProduct(id) {
   const p = product();
   if (!p.views.some((v) => v.key === state.view)) state.view = p.views[0].key;
   $$('#productGrid .product').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
-  $('#guidesToggle').closest('label').hidden = !printArea(id, state.view);
+  syncAreaPanel();
   $('#garmentCard').hidden = id === 'custom' || !!(bakedView(id, 'front') && bakedView(id, 'front').base);
   $('#removeBgRow').hidden = id !== 'custom';
   buildViewTabs();
@@ -1066,6 +1146,7 @@ function buildViewTabs() {
 function setView(key) {
   state.view = key;
   state.selectedId = null;
+  syncAreaPanel();
   buildViewTabs();
   buildMask();
   syncObjectPanel();
@@ -1147,6 +1228,54 @@ $('#fillShapes').addEventListener('change', (e) => { state.fillShapes = e.target
 $('#clipToggle').addEventListener('change', (e) => { state.clip = e.target.checked; markDirty(); render(); });
 
 $('#guidesToggle').addEventListener('change', (e) => { state.guides = e.target.checked; render(); });
+
+// print area panel
+function areaPresets(pid = state.productId, view = state.view) {
+  const p = PRODUCTS.find((x) => x.id === pid);
+  return ((p && PRINT_PRESETS[p.kind]) || []).filter((s) => !s.views || s.views.includes(view));
+}
+function syncAreaPanel() {
+  const pa = printArea();
+  $('#areaBox').hidden = !pa;
+  if (!pa) return;
+  const presets = areaPresets();
+  const sel = $('#areaPreset');
+  const same = (r) => Math.abs(r[0] - pa.x) < 0.6 && Math.abs(r[1] - pa.y) < 0.6 && Math.abs(r[2] - pa.w) < 0.6 && Math.abs(r[3] - pa.h) < 0.6;
+  const match = presets.find((s) => same(presetRect(s)));
+  sel.innerHTML = presets.map((s) => `<option value="${s.id}">${s.name}</option>`).join('') + '<option value="custom">Custom</option>';
+  sel.value = match ? match.id : 'custom';
+  const W_ = $('#areaW'), H_ = $('#areaH');
+  if (document.activeElement !== W_) W_.value = +(pa.w / pa.ppi).toFixed(2);
+  if (document.activeElement !== H_) H_.value = +(pa.h / pa.ppi).toFixed(2);
+  $('#areaSize').textContent = `${inches(pa.w, pa.ppi)} × ${inches(pa.h, pa.ppi)} in`;
+  $('#areaClip').checked = state.areaClip;
+  const editing = state.tool === 'area';
+  $('#areaAdjust').classList.toggle('active', editing);
+  $('#areaAdjust').textContent = editing ? 'Done' : 'Adjust on canvas';
+  $('#printFileInfo').textContent = `Artwork only, transparent PNG, ${inches(pa.w, pa.ppi)} × ${inches(pa.h, pa.ppi)} in at 300 DPI`;
+}
+$('#areaPreset').addEventListener('change', (e) => {
+  const s = areaPresets().find((x) => x.id === e.target.value);
+  if (s) setArea(presetRect(s));
+});
+function sizeArea() {
+  const pa = printArea();
+  if (!pa) return;
+  const w = Math.max(1, Math.min(30, +$('#areaW').value || 1)) * pa.ppi;
+  const h = Math.max(1, Math.min(30, +$('#areaH').value || 1)) * pa.ppi;
+  setArea([pa.x + pa.w / 2 - w / 2, pa.y, w, h]);
+}
+$('#areaW').addEventListener('change', sizeArea);
+$('#areaH').addEventListener('change', sizeArea);
+$('#areaAdjust').addEventListener('click', () => setTool(state.tool === 'area' ? 'select' : 'area'));
+$('#areaReset').addEventListener('click', () => {
+  const o = state.areaOverrides[state.productId];
+  if (o) delete o[state.view];
+  markDirty();
+  syncAreaPanel();
+  render();
+});
+$('#areaClip').addEventListener('change', (e) => { state.areaClip = e.target.checked; markDirty(); render(); });
 
 // text styles
 TEXT_STYLES.forEach((s) => {
@@ -1334,13 +1463,44 @@ function copyCanvas(src) {
   c.getContext('2d').drawImage(src, 0, 0);
   return c;
 }
+// Print-ready file: the print area only, re-rendered at 300 DPI (text and graphics stay sharp).
+function printFile(pid = state.productId, view = state.view, dpi = 300) {
+  const saved = { p: state.productId, v: state.view };
+  state.productId = pid; state.view = view; buildMask();
+  try {
+    const pa = printArea();
+    if (!pa) return copyCanvas(composeArt(false));
+    let k = dpi / pa.ppi;                            // pixels per editor unit
+    const maxPx = 40e6;                               // keep huge areas within browser limits
+    if (pa.w * k * pa.h * k > maxPx) k = Math.sqrt(maxPx / (pa.w * pa.h));
+    const c = document.createElement('canvas');
+    c.width = Math.round(pa.w * k); c.height = Math.round(pa.h * k);
+    const x = c.getContext('2d');
+    x.imageSmoothingQuality = 'high';
+    const L = layer();
+    x.drawImage(L.art, pa.x * S, pa.y * S, pa.w * S, pa.h * S, 0, 0, c.width, c.height);
+    x.setTransform(k, 0, 0, k, -pa.x * k, -pa.y * k);
+    for (const o of L.objects) drawObject(x, o);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    if (state.clip) {
+      x.globalCompositeOperation = 'destination-in';
+      x.drawImage(maskCv, pa.x * S, pa.y * S, pa.w * S, pa.h * S, 0, 0, c.width, c.height);
+    }
+    c.dpi = Math.round(k * pa.ppi);
+    c.inches = `${inches(pa.w, pa.ppi)}x${inches(pa.h, pa.ppi)}in`;
+    return c;
+  } finally {
+    state.productId = saved.p; state.view = saved.v; buildMask();
+  }
+}
 function doExport(kind) {
   const base = slug() + '-' + (state.productId === 'custom' ? 'custom' : state.productId);
   if (kind === 'mockup') {
     drawScene(scratchCv.getContext('2d'), false);
     download(copyCanvas(scratchCv), `${base}-${viewDef().label.toLowerCase()}.png`);
   } else if (kind === 'print') {
-    download(copyCanvas(composeArt(false)), `${base}-${viewDef().label.toLowerCase()}-print.png`);
+    const pf = printFile();
+    download(pf, `${base}-${viewDef().label.toLowerCase()}-print${pf.inches ? '-' + pf.inches + '-' + pf.dpi + 'dpi' : ''}.png`);
   } else if (kind === 'pack') {
     open3D(() => window.Viewer3D.downloadPack());
   } else if (kind === 'glb') {
@@ -1378,6 +1538,8 @@ function serialize() {
     productId: state.productId,
     garment: state.garment,
     clip: state.clip,
+    areas: state.areaOverrides,
+    areaClip: state.areaClip,
     custom: state.custom ? { src: state.custom.src, removeWhite: state.custom.removeWhite } : null,
     views,
   };
@@ -1424,6 +1586,8 @@ async function loadDesign(d) {
   state.garment = d.garment || state.garment;
   state.clip = d.clip !== false;
   $('#clipToggle').checked = state.clip;
+  state.areaOverrides = d.areas || {};
+  state.areaClip = !!d.areaClip;
   setGarment(state.garment);
   if (d.custom) {
     $('#removeBg').checked = d.custom.removeWhite;
@@ -1445,6 +1609,7 @@ async function loadDesign(d) {
   }
   buildViewTabs();
   syncObjectPanel();
+  syncAreaPanel();
   render();
   dirty = false;
   setSaveState(state.designId ? 'Saved' : 'Draft');
@@ -1452,6 +1617,8 @@ async function loadDesign(d) {
 
 function resetDesign(silent) {
   state.layers = {};
+  state.areaOverrides = {};
+  state.areaClip = false;
   state.selectedId = null;
   state.designId = null;
   state.view = 'front';
@@ -1547,6 +1714,58 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
 }
 
+/* ---------------- your own blanks (IndexedDB) ---------------- */
+const KIND_LABEL = { top: 'Top', bottom: 'Pants', shorts: 'Shorts', other: 'Product' };
+const userBlanks = [];   // records incl. .glb bytes, also handed to the 3D studio
+function idb() {
+  return new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('driplab', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('blanks', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  });
+}
+async function idbAll() {
+  const db = await idb();
+  return new Promise((res, rej) => { const q = db.transaction('blanks').objectStore('blanks').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); });
+}
+async function idbPut(rec) {
+  const db = await idb();
+  return new Promise((res, rej) => { const t = db.transaction('blanks', 'readwrite'); t.objectStore('blanks').put(rec); t.oncomplete = res; t.onerror = () => rej(t.error); });
+}
+async function idbDel(id) {
+  const db = await idb();
+  return new Promise((res, rej) => { const t = db.transaction('blanks', 'readwrite'); t.objectStore('blanks').delete(id); t.oncomplete = res; t.onerror = () => rej(t.error); });
+}
+// Sensible starting print area for a blank, in editor units, from its outline frame and size.
+function defaultBlankPrint(rec) {
+  const [x0, x1, y0, y1] = rec.frame;
+  const fw = x1 - x0, fh = y1 - y0, ppi = rec.ppi;
+  let w, h, cx = 300, top;
+  if (rec.kind === 'bottom') { w = Math.min(4 * ppi, fw * 0.3); h = Math.min(12 * ppi, fh * 0.35); cx = 300 - fw * 0.22; top = y0 + fh * 0.2; }
+  else if (rec.kind === 'shorts') { w = Math.min(4 * ppi, fw * 0.3); h = Math.min(4 * ppi, fh * 0.3); cx = 300 - fw * 0.22; top = y0 + fh * 0.3; }
+  else if (rec.kind === 'top') { w = Math.min(12 * ppi, fw * 0.45); h = Math.min(16 * ppi, fh * 0.55); top = y0 + fh * 0.16; }
+  else { w = fw * 0.45; h = fh * 0.45; top = y0 + fh * 0.2; }
+  return { front: [cx - w / 2, top, w, h], back: [600 - cx - w / 2, top, w, h] };
+}
+function registerBlank(rec) {
+  if (!rec.print) rec.print = defaultBlankPrint(rec);
+  if (PRODUCTS.some((p) => p.id === rec.id)) return;
+  PRODUCTS.push({
+    id: rec.id, name: rec.name, blurb: KIND_LABEL[rec.kind] || 'Product', kind: rec.kind, ppi: rec.ppi, user: true,
+    print: rec.print,
+    views: [{ key: 'front', label: 'Front', shape: [], details: [] }, { key: 'back', label: 'Back', shape: [], details: [] }],
+  });
+  BAKED[rec.id] = rec.baked;
+  userBlanks.push(rec);
+  if (window.Viewer3D) window.Viewer3D.addBlankModel(rec);
+}
+async function loadUserBlanks() {
+  try { (await idbAll()).forEach(registerBlank); } catch { /* storage unavailable */ }
+}
+
 /* ---------------- 3D / 360° bridge ---------------- */
 window.DripLab = {
   saveFile,
@@ -1557,6 +1776,32 @@ window.DripLab = {
   garmentName,
   setGarment,
   setProduct(id) { if (id !== state.productId && PRODUCTS.some((p) => p.id === id)) setProduct(id); },
+  async addBlank(rec) {
+    rec.print = defaultBlankPrint(rec);
+    let stored = true;
+    try { await idbPut(rec); } catch { stored = false; }
+    registerBlank(rec);
+    buildProductGrid();
+    setProduct(rec.id);
+    toast(stored ? `Saved “${rec.name}” to your blanks` : `Added “${rec.name}” for this session (browser storage is unavailable)`);
+    return true;
+  },
+  removeBlank(id) {
+    const p = PRODUCTS.find((x) => x.id === id);
+    if (!p) return;
+    askConfirm(`Remove “${p.name}” from your blanks?`, 'Remove').then(async (ok) => {
+      if (!ok) return;
+      try { await idbDel(id); } catch { /* ignore */ }
+      PRODUCTS.splice(PRODUCTS.indexOf(p), 1);
+      delete BAKED[id];
+      const i = userBlanks.findIndex((r) => r.id === id);
+      if (i >= 0) userBlanks.splice(i, 1);
+      if (window.Viewer3D) window.Viewer3D.removeBlankModel(id);
+      if (state.productId === id) setProduct('tee');
+      buildProductGrid();
+      toast('Blank removed');
+    });
+  },
   // Artwork-only print for a product side, clipped to that product's shape.
   getPrint(pid, view) {
     const saved = { p: state.productId, v: state.view };
@@ -1570,6 +1815,7 @@ window.DripLab = {
     return c;
   },
   // Flat editor mockup of a product side.
+  getPrintFile(pid, view) { return printFile(pid, view); },
   getMockup(pid, view) {
     const saved = { p: state.productId, v: state.view, sel: state.selectedId };
     state.productId = pid;
@@ -1615,7 +1861,7 @@ function open3D(then) {
   status.hidden = false;
   const s = document.createElement('script');
   s.src = 'viewer3d.bundle.js';
-  s.onload = go;
+  s.onload = () => { userBlanks.forEach((r) => window.Viewer3D.addBlankModel(r)); go(); };
   s.onerror = () => { status.hidden = true; showDesignMode(); toast('The 3D studio file is missing (viewer3d.bundle.js).'); };
   document.body.appendChild(s);
 }
@@ -1667,6 +1913,8 @@ $('#welcomeOpen').addEventListener('click', () => { openGallery(); });
 welcome.addEventListener('cancel', (e) => { if (!hasDraft) e.preventDefault(); });
 
 (async () => {
+  await loadUserBlanks();
+  if (userBlanks.length) buildProductGrid();
   let draft = null;
   try { draft = JSON.parse(localStorage.getItem(LS_DRAFT) || 'null'); } catch { /* no draft */ }
   hasDraft = !!(draft && Object.keys(draft.views || {}).length);

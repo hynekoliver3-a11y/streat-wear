@@ -42,7 +42,7 @@
       <div class="menu menu-wide" id="exportMenu" role="menu" hidden>
         <button data-export="pack" role="menuitem"><strong>Product pack (.zip)</strong><small>3D file, 5 studio renders, print files, mockups</small></button>
         <button data-export="glb" role="menuitem"><strong>3D file (.glb)</strong><small>Your designed product for Blender, 3D viewers, AR</small></button>
-        <button data-export="print" role="menuitem"><strong>Print file — this side</strong><small>Artwork only, transparent PNG, 1200 × 1400 px</small></button>
+        <button data-export="print" role="menuitem"><strong>Print file — this side</strong><small id="printFileInfo">Artwork only, transparent PNG at 300 DPI</small></button>
         <button data-export="mockup" role="menuitem"><strong>Mockup — this side</strong><small>Flat product image, PNG</small></button>
         <button data-export="all" role="menuitem"><strong>Mockups — all sides</strong><small>Front and back, PNG</small></button>
       </div>
@@ -121,7 +121,23 @@
         <h3>Blank</h3>
         <div class="product-grid" id="productGrid"></div>
         <label class="check" id="removeBgRow" hidden><input type="checkbox" id="removeBg" checked> Remove white background</label>
+      </section>
+
+      <section class="sect" id="areaBox">
+        <h3>Print area <span class="sect-val" id="areaSize"></span></h3>
+        <label class="field">Size and placement
+          <select id="areaPreset"></select>
+        </label>
+        <div class="row">
+          <label class="field">Width (in) <input type="number" id="areaW" class="num" min="1" max="30" step="0.25"></label>
+          <label class="field">Height (in) <input type="number" id="areaH" class="num" min="1" max="30" step="0.25"></label>
+        </div>
+        <div class="row row-btns">
+          <button class="btn sm" id="areaAdjust">Adjust on canvas</button>
+          <button class="btn ghost sm" id="areaReset">Reset</button>
+        </div>
         <label class="check"><input type="checkbox" id="guidesToggle" checked> Show print area</label>
+        <label class="check"><input type="checkbox" id="areaClip"> Print only inside the area</label>
       </section>
 
       <section class="sect" id="garmentCard">
@@ -175,8 +191,22 @@
           <button data-model="tee"><strong>T-shirt</strong><small>Short sleeve, crew neck</small></button>
           <button data-model="crewneck"><strong>Crewneck</strong><small>Sweatshirt, ribbed cuffs and hem</small></button>
           <button data-model="sneaker"><strong>Sneaker</strong><small>Knit runner, 3 colorways</small></button>
-          <button data-model="glb"><strong>Your 3D model</strong><small>Load any product as a .glb file</small></button>
+          <button data-model="glb"><strong>Load a 3D model…</strong><small>Any product as a .glb file, e.g. jeans, a hoodie</small></button>
         </div>
+      </section>
+      <section class="sect sect-selected" id="v3dSaveBlank" hidden>
+        <h3>Save as blank</h3>
+        <label class="field">Name <input id="blankName" class="text-input" maxlength="40" placeholder="e.g. Baggy jeans"></label>
+        <label class="field">Type
+          <select id="blankKind">
+            <option value="top">Top: tee, hoodie, sweatshirt</option>
+            <option value="bottom">Pants: jeans, sweatpants</option>
+            <option value="shorts">Shorts</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div class="stack" style="margin-top:12px"><button class="btn primary" id="blankSave">Save to my blanks</button></div>
+        <p class="note">Adds it next to the T-shirt in the designer, with front and back views, a print area and sizes in inches. Saved in this browser.</p>
       </section>
       <section class="sect">
         <h3>Color</h3>
