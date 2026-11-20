@@ -9,15 +9,22 @@ const W = 600, H = 700, S = 2, WS = W * S, HS = H * S;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
-const GARMENT_COLORS = ['#f4f3ef', '#161616', '#9a9a9e', '#1e2a44', '#2f4a35', '#5c1f2b', '#d8c7a8', '#6b6b3a', '#2546b8', '#c4262e', '#f2b8c6', '#c6ff00', '#ff7a1a', '#b9a7e8'];
-const PAINT_COLORS = ['#111111', '#ffffff', '#c6ff00', '#ff3b30', '#ff7a1a', '#ffd60a', '#34c759', '#00c7be', '#0a84ff', '#5e5ce6', '#bf5af2', '#ff2d92', '#8e8e93', '#a2845e'];
-const STICKERS = ['🔥', '⚡', '💀', '👑', '⭐', '💎', '🌹', '🦋', '🐍', '🎲', '🖤', '✌️', '👁️', '🌊', '🍄', '🚀', '💯', '☯️', '⛓️', '🌵', '🐉', '🎯', '☠️', '🌙'];
+// Standard blank colors, named the way blank suppliers name them.
+const GARMENT_LIST = [
+  ['#f4f3ef', 'White'], ['#161616', 'Black'], ['#9a9a9e', 'Heather grey'], ['#d9d8d3', 'Ash'],
+  ['#1e2a44', 'Navy'], ['#2546b8', 'Royal'], ['#2f4a35', 'Forest'], ['#5b5b3a', 'Military green'],
+  ['#5c1f2b', 'Maroon'], ['#c4262e', 'Red'], ['#d8c7a8', 'Sand'], ['#5a4232', 'Brown'],
+  ['#f2b8c6', 'Light pink'], ['#b9a7e8', 'Lavender'],
+];
+const GARMENT_COLORS = GARMENT_LIST.map((g) => g[0]);
+const garmentName = (c) => (GARMENT_LIST.find((g) => g[0] === c) || [c, 'Custom'])[1];
+const PAINT_COLORS = ['#111111', '#ffffff', '#ff4f12', '#e0262f', '#ffc21a', '#2bb673', '#1f6fff', '#6b4cff', '#ff5fa2', '#8a8a86', '#d8c7a8', '#5a4232'];
 const EMOJI_FONTS = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"';
 const LS_DESIGNS = 'driplab.designs.v1';
 const LS_DRAFT = 'driplab.draft.v1';
 
 const HINTS = {
-  select: 'Move — drag objects, corner handles scale, top handle rotates (Shift snaps 15°). Arrows nudge, Delete removes.',
+  select: 'Move — drag to place, corners to scale, top handle to rotate (Shift snaps 15°).',
   brush: 'Brush — draw on the product. [ and ] change size. M toggles mirror.',
   spray: 'Spray — hold and drag for a spray-paint effect.',
   eraser: 'Eraser — removes painted artwork (not text or images; select and delete those).',
@@ -25,7 +32,7 @@ const HINTS = {
   line: 'Line — drag. Shift snaps to 45°.',
   rect: 'Rectangle — drag. Shift for a square. Toggle "Filled shapes" in Paint.',
   ellipse: 'Ellipse — drag. Shift for a circle.',
-  text: 'Text — click on the product to place text, then edit it in the panel.',
+  text: 'Text — click on the product to place text, or pick a style under Add text.',
   picker: 'Picker — click anywhere to grab a color.',
 };
 
@@ -66,6 +73,7 @@ const state = {
   opacity: 1,
   fillShapes: false,
   clip: true,
+  guides: true,
   mirror: false,
   selectedId: null,
   designId: null,
@@ -385,22 +393,49 @@ function drawScene(c, ui, flat = false) {
   if (ui) drawUI(c);
 }
 
+const ACCENT = '#ff4f12';
+function printArea(pid = state.productId, view = state.view) {
+  const p = PRODUCTS.find((x) => x.id === pid);
+  if (!p || !p.print || !p.print[view]) return null;
+  const [x, y, w, h] = p.print[view];
+  return { x, y, w, h, ppi: p.ppi };
+}
+const inches = (v, ppi) => (v / ppi).toFixed(v / ppi < 10 ? 1 : 0);
 function drawUI(c) {
   const u = uiUnit();
   const o = selected();
+  const pa = state.guides ? printArea() : null;
+  if (pa) {
+    c.save();
+    c.lineWidth = 1.2 * u;
+    c.setLineDash([5 * u, 4 * u]);
+    c.strokeStyle = 'rgba(255,79,18,0.75)';
+    c.strokeRect(pa.x, pa.y, pa.w, pa.h);
+    c.setLineDash([]);
+    const label = `Print area ${inches(pa.w, pa.ppi)} × ${inches(pa.h, pa.ppi)} in`;
+    c.font = `600 ${11 * u}px Inter, system-ui, sans-serif`;
+    const tw = c.measureText(label).width;
+    c.fillStyle = 'rgba(255,79,18,0.92)';
+    c.fillRect(pa.x, pa.y - 18 * u, tw + 12 * u, 16 * u);
+    c.fillStyle = '#fff';
+    c.textBaseline = 'middle';
+    c.fillText(label, pa.x + 6 * u, pa.y - 10 * u);
+    c.restore();
+  }
   if (o && state.tool === 'select') {
     const { hw, hh } = halfExtents(o);
     c.save();
     c.translate(o.x, o.y);
     c.rotate(o.rot);
     c.lineWidth = 1.5 * u;
-    c.strokeStyle = '#c6ff00';
+    c.strokeStyle = ACCENT;
     c.setLineDash([6 * u, 4 * u]);
     c.strokeRect(-hw, -hh, hw * 2, hh * 2);
     c.setLineDash([]);
     c.beginPath(); c.moveTo(0, -hh); c.lineTo(0, -hh - 30 * u); c.stroke();
-    c.fillStyle = '#c6ff00';
-    c.strokeStyle = '#111';
+    c.fillStyle = '#fff';
+    c.strokeStyle = ACCENT;
+    c.lineWidth = 1.5 * u;
     const hs = 10 * u;
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
       c.fillRect(sx * hw - hs / 2, sy * hh - hs / 2, hs, hs);
@@ -412,7 +447,7 @@ function drawUI(c) {
   if (state.mirror && ['brush', 'spray', 'eraser', 'line', 'rect', 'ellipse'].includes(state.tool)) {
     c.save();
     c.setLineDash([4 * u, 6 * u]);
-    c.strokeStyle = 'rgba(198,255,0,0.7)';
+    c.strokeStyle = 'rgba(255,79,18,0.6)';
     c.lineWidth = 1 * u;
     c.beginPath(); c.moveTo(W / 2, 0); c.lineTo(W / 2, H); c.stroke();
     c.restore();
@@ -642,9 +677,25 @@ function pickColor(p) {
 }
 
 /* ---------------- objects actions ---------------- */
-function addText(p, text = 'DRIP') {
+// Where new items go: the print area, stepping down a little for each item already there.
+function areaCenter() {
+  const pa = printArea();
+  const n = layer().objects.length % 4;
+  const c = pa ? { x: pa.x + pa.w / 2, y: pa.y + pa.h * 0.28, w: pa.w, h: pa.h } : { x: W / 2, y: 260, w: 260, h: 300 };
+  c.y += n * Math.min(46, c.h * 0.2);
+  return c;
+}
+const TEXT_STYLES = [
+  { label: 'Headline', font: 'Anton', text: 'NO DAYS OFF', size: 64 },
+  { label: 'Wide', font: 'Archivo', text: 'STUDIO', size: 56, spacing: 6 },
+  { label: 'Gothic', font: 'UnifrakturMaguntia', text: 'Hometown', size: 64 },
+  { label: 'Script', font: 'Pacifico', text: 'Sunday', size: 60 },
+  { label: 'Marker', font: 'Permanent Marker', text: 'handmade', size: 56 },
+  { label: 'Varsity arc', font: 'Bungee', text: 'EST. 2026', size: 46, arc: 70 },
+];
+function addText(p, text = 'YOUR TEXT', style = {}) {
   pushHistory();
-  const o = { id: nextId++, type: 'text', text, font: 'Anton', size: 72, color: state.color, stroke: '#ffffff', strokeW: 0, arc: 0, spacing: 0, x: p.x, y: p.y, rot: 0, scale: 1, flip: false, opacity: 1 };
+  const o = { id: nextId++, type: 'text', text, font: style.font || 'Anton', size: style.size || 72, color: state.color, stroke: '#ffffff', strokeW: 0, arc: style.arc || 0, spacing: style.spacing || 0, x: p.x, y: p.y, rot: 0, scale: 1, flip: false, opacity: 1 };
   layer().objects.push(o);
   selectObject(o);
   setTool('select');
@@ -653,12 +704,37 @@ function addText(p, text = 'DRIP') {
   setTimeout(focusText, 0);
   if (document.fonts) document.fonts.load(`72px "${o.font}"`).then(render).catch(() => {});
 }
-function addSticker(emoji) {
-  pushHistory();
-  const o = { id: nextId++, type: 'text', text: emoji, font: 'Inter', size: 110, color: '#000000', stroke: '#ffffff', strokeW: 0, arc: 0, spacing: 0, x: W / 2, y: 300, rot: 0, scale: 1, flip: false, opacity: 1, sticker: true };
-  layer().objects.push(o);
-  selectObject(o);
-  setTool('select');
+function addTextStyle(s) {
+  const c = areaCenter();
+  addText({ x: c.x, y: c.y }, s.text, s);
+  const o = selected();
+  if (o) {
+    // fit the line inside the print area
+    const { w } = objSize(o);
+    if (w > c.w) { o.scale = c.w / w; render(); }
+  }
+}
+function addGraphic(g) {
+  const c = areaCenter();
+  const src = graphicDataUrl(g, state.color);
+  loadImage(src).then((img) => {
+    pushHistory();
+    const size = Math.min(150, c.w * 0.8);
+    const o = { id: nextId++, type: 'image', src, img, w: size, h: size, x: c.x, y: c.y + size * 0.3, rot: 0, scale: 1, flip: false, opacity: 1, graphic: g.id, tint: state.color };
+    layer().objects.push(o);
+    selectObject(o);
+    setTool('select');
+  });
+}
+function tintGraphic(o, color) {
+  const g = GRAPHICS.find((x) => x.id === o.graphic);
+  if (!g) return;
+  o.tint = color;
+  o.src = graphicDataUrl(g, color);
+  const img = new Image();
+  img.onload = render;
+  img.src = o.src;
+  o.img = img;
 }
 // Drawings photographed or scanned on paper: if the image's border is plain paper,
 // turn the paper transparent so only the ink/paint is printed.
@@ -703,9 +779,10 @@ function placeNewImage(src) {
   const img = new Image();
   img.onload = () => {
     pushHistory();
-    const max = 260;
+    const c = areaCenter();
+    const max = Math.min(260, c.w);
     const k = Math.min(max / img.naturalWidth, max / img.naturalHeight, 1);
-    const o = { id: nextId++, type: 'image', src, img, w: img.naturalWidth * k, h: img.naturalHeight * k, x: W / 2, y: 300, rot: 0, scale: 1, flip: false, opacity: 1 };
+    const o = { id: nextId++, type: 'image', src, img, w: img.naturalWidth * k, h: img.naturalHeight * k, x: c.x, y: c.y + 30, rot: 0, scale: 1, flip: false, opacity: 1 };
     layer().objects.push(o);
     selectObject(o);
     setTool('select');
@@ -714,7 +791,9 @@ function placeNewImage(src) {
   img.src = src;
 }
 function selectObject(o) {
+  const changed = (o ? o.id : null) !== state.selectedId;
   state.selectedId = o ? o.id : null;
+  if (o && changed) requestAnimationFrame(() => $('#panel').scrollTo({ top: 0, behavior: 'smooth' }));
   syncObjectPanel();
   render();
 }
@@ -729,7 +808,7 @@ function objAction(kind) {
   if (kind === 'forward' && i < L.objects.length - 1) { L.objects.splice(i, 1); L.objects.splice(i + 1, 0, o); }
   if (kind === 'backward' && i > 0) { L.objects.splice(i, 1); L.objects.splice(i - 1, 0, o); }
   if (kind === 'flip') o.flip = !o.flip;
-  if (kind === 'center') { o.x = W / 2; }
+  if (kind === 'center') { const pa = printArea(); o.x = pa ? pa.x + pa.w / 2 : W / 2; }
   syncObjectPanel();
   render();
 }
@@ -889,15 +968,15 @@ function setPaintColor(c) {
   $$('#paintSwatches button').forEach((b) => b.classList.toggle('active', b.dataset.color === c));
 }
 
-function buildSwatches(el, colors, onPick, getActive) {
+function buildSwatches(el, colors, onPick, getActive, names) {
   el.innerHTML = '';
   colors.forEach((c) => {
     const b = document.createElement('button');
     b.className = 'swatch';
     b.style.background = c;
     b.dataset.color = c;
-    b.title = c;
-    b.setAttribute('aria-label', 'Color ' + c);
+    b.title = names ? names(c) : c;
+    b.setAttribute('aria-label', (names ? names(c) : 'Color') + ' ' + c);
     b.addEventListener('click', () => onPick(c));
     el.appendChild(b);
   });
@@ -906,6 +985,8 @@ function buildSwatches(el, colors, onPick, getActive) {
 
 function setGarment(c) {
   state.garment = c;
+  const gn = $('#garmentName');
+  if (gn) gn.textContent = garmentName(c);
   $$('#garmentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.color === c));
   const ci = $('#garmentCustom');
   if (ci) ci.value = c;
@@ -915,41 +996,45 @@ function setGarment(c) {
 
 function buildGarmentSwatches() {
   const el = $('#garmentSwatches');
-  buildSwatches(el, GARMENT_COLORS, setGarment);
+  buildSwatches(el, GARMENT_COLORS, setGarment, null, garmentName);
   const lab = document.createElement('label');
   lab.className = 'swatch custom';
   lab.title = 'Custom color';
-  lab.innerHTML = '<input type="color" id="garmentCustom" aria-label="Custom garment color">+';
+  lab.innerHTML = '<input type="color" id="garmentCustom" aria-label="Custom garment color">';
   el.appendChild(lab);
   $('#garmentCustom').addEventListener('input', (e) => setGarment(e.target.value));
 }
 
-function svgThumb(p) {
-  const v = p.views[0];
-  const d = (typeof BAKED !== 'undefined' && BAKED[p.id]) ? BAKED[p.id][v.key].shape : v.shape.join(' ');
-  return `<svg viewBox="0 0 600 700" aria-hidden="true"><path d="${d}"/></svg>`;
+// Thumbnail of the real blank (the baked render of its 3D model).
+function productThumb(p) {
+  const b = typeof BAKED !== 'undefined' && BAKED[p.id] && BAKED[p.id].front;
+  if (!b) return '';
+  return `<img alt="" src="${b.base || b.shade}" class="${b.base ? '' : 'shade'}" draggable="false">`;
 }
-function buildProductGrid() {
-  const el = $('#productGrid');
+const UPLOAD_ICON = '<svg viewBox="0 0 24 24" class="upload" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>';
+function productCards(el, onPick, onCustom) {
   el.innerHTML = '';
   PRODUCTS.forEach((p) => {
     const b = document.createElement('button');
     b.className = 'product';
     b.dataset.id = p.id;
-    b.innerHTML = svgThumb(p) + `<span>${p.name}</span>`;
-    b.addEventListener('click', () => setProduct(p.id));
+    b.innerHTML = `<span class="thumb">${productThumb(p)}</span><span class="pname">${p.name}</span><span class="pmeta">${p.blurb || ''} · 3D</span>`;
+    b.addEventListener('click', () => onPick(p.id));
     el.appendChild(b);
   });
   const c = document.createElement('button');
   c.className = 'product';
   c.dataset.id = 'custom';
-  c.innerHTML = '<svg viewBox="0 0 24 24" class="upload"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span>Your own</span>';
+  c.innerHTML = `<span class="thumb">${UPLOAD_ICON}</span><span class="pname">Your own</span><span class="pmeta">Photo or PNG</span>`;
   c.title = 'Upload a photo or PNG of your own product';
-  c.addEventListener('click', () => {
+  c.addEventListener('click', onCustom);
+  el.appendChild(c);
+}
+function buildProductGrid() {
+  productCards($('#productGrid'), setProduct, () => {
     if (state.custom && state.productId !== 'custom') setProduct('custom');
     else $('#productFile').click();
   });
-  el.appendChild(c);
 }
 
 function setProduct(id) {
@@ -957,6 +1042,7 @@ function setProduct(id) {
   const p = product();
   if (!p.views.some((v) => v.key === state.view)) state.view = p.views[0].key;
   $$('#productGrid .product').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
+  $('#guidesToggle').closest('label').hidden = !printArea(id, state.view);
   $('#garmentCard').hidden = id === 'custom' || !!(bakedView(id, 'front') && bakedView(id, 'front').base);
   $('#removeBgRow').hidden = id !== 'custom';
   buildViewTabs();
@@ -1060,13 +1146,29 @@ opIn.addEventListener('input', () => { state.opacity = +opIn.value / 100; $('#op
 $('#fillShapes').addEventListener('change', (e) => { state.fillShapes = e.target.checked; });
 $('#clipToggle').addEventListener('change', (e) => { state.clip = e.target.checked; markDirty(); render(); });
 
-// stickers
-STICKERS.forEach((s) => {
+$('#guidesToggle').addEventListener('change', (e) => { state.guides = e.target.checked; render(); });
+
+// text styles
+TEXT_STYLES.forEach((s) => {
   const b = document.createElement('button');
-  b.textContent = s;
-  b.title = 'Add sticker';
-  b.addEventListener('click', () => addSticker(s));
-  $('#stickerGrid').appendChild(b);
+  b.className = 'text-style';
+  b.textContent = s.label;
+  b.style.fontFamily = `"${s.font}", sans-serif`;
+  if (s.font === 'Archivo') b.style.fontStretch = '125%';
+  b.title = 'Add ' + s.label.toLowerCase() + ' text';
+  b.addEventListener('click', () => addTextStyle(s));
+  $('#textStyles').appendChild(b);
+});
+
+// graphics library
+GRAPHICS.forEach((g) => {
+  const b = document.createElement('button');
+  b.className = 'graphic';
+  b.title = g.name;
+  b.setAttribute('aria-label', 'Add ' + g.name);
+  b.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true">${g.svg.split('{{c}}').join('currentColor').replace(/id="(\w+)"/g, 'id="$1-' + g.id + '"').replace(/url\(#(\w+)\)/g, 'url(#$1-' + g.id + ')')}</svg>`;
+  b.addEventListener('click', () => addGraphic(g));
+  $('#graphicGrid').appendChild(b);
 });
 
 // object panel
@@ -1077,8 +1179,15 @@ function syncObjectPanel() {
   $('#objectCard').hidden = !o;
   if (!o) return;
   const isText = o.type === 'text';
-  $('#objectTitle').textContent = o.type === 'image' ? 'Image' : o.sticker ? 'Sticker' : 'Text';
+  $('#objectTitle').textContent = o.graphic ? 'Graphic' : o.type === 'image' ? 'Image' : o.sticker ? 'Sticker' : 'Text';
   $('#textProps').hidden = !isText;
+  $('#tintRow').hidden = !o.graphic;
+  if (o.graphic) $('#tintColor').value = o.tint || '#111111';
+  const pa = printArea();
+  if (pa) {
+    const s = objSize(o);
+    $('#objSize').textContent = `${inches(s.w * o.scale, pa.ppi)} × ${inches(s.h * o.scale, pa.ppi)} in`;
+  } else $('#objSize').textContent = '';
   if (isText) {
     $$('#textProps > *').forEach((n) => { n.hidden = false; });
     if (o.sticker) {
@@ -1123,6 +1232,7 @@ bindProp('#textStrokeW', (o, el) => { o.strokeW = +el.value; });
 bindProp('#textArc', (o, el) => { o.arc = +el.value; });
 bindProp('#textSpacing', (o, el) => { o.spacing = +el.value; });
 bindProp('#objOpacity', (o, el) => { o.opacity = +el.value / 100; });
+bindProp('#tintColor', (o, el) => { if (o.graphic) tintGraphic(o, el.value); });
 $$('[data-obj]').forEach((b) => b.addEventListener('click', () => objAction(b.dataset.obj)));
 
 // top bar
@@ -1139,17 +1249,30 @@ $('#clearBtn').addEventListener('click', () => {
   toast('Cleared — Ctrl+Z to undo');
 });
 $('#newBtn').addEventListener('click', () => {
-  askConfirm('Start a new design? Unsaved changes will be lost.', 'Start new').then((ok) => {
-    if (!ok) return;
-    resetDesign();
-    toast('New design');
-  });
+  const hasWork = Object.values(state.layers).some((L) => L.objects.length || !isBlank(L.art));
+  const go = () => openWelcome(true);
+  if (!hasWork) { go(); return; }
+  askConfirm('Start a new design? Anything you have not saved will be lost.', 'Start new').then((ok) => { if (ok) go(); });
 });
+const helpDlg = $('#helpDlg');
+$('#helpBtn').addEventListener('click', () => helpDlg.showModal());
+$('#closeHelp').addEventListener('click', () => helpDlg.close());
+helpDlg.addEventListener('click', (e) => { if (e.target === helpDlg) helpDlg.close(); });
 $('#designName').addEventListener('input', markDirty);
 
-const exportBtn = $('#exportBtn'), exportMenu = $('#exportMenu');
-exportBtn.addEventListener('click', (e) => { e.stopPropagation(); exportMenu.hidden = !exportMenu.hidden; });
-document.addEventListener('click', () => { exportMenu.hidden = true; });
+const exportMenu = $('#exportMenu');
+const MENUS = [['#fileBtn', '#fileMenu'], ['#exportBtn', '#exportMenu']];
+function closeMenus() { MENUS.forEach(([, m]) => { $(m).hidden = true; $(m).previousElementSibling.setAttribute('aria-expanded', 'false'); }); }
+MENUS.forEach(([b, m]) => {
+  $(b).addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = $(m).hidden;
+    closeMenus();
+    $(m).hidden = !open;
+    $(b).setAttribute('aria-expanded', String(open));
+  });
+});
+document.addEventListener('click', closeMenus);
 $$('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.export)));
 
 /* ---------------- export ---------------- */
@@ -1220,6 +1343,8 @@ function doExport(kind) {
     download(copyCanvas(composeArt(false)), `${base}-${viewDef().label.toLowerCase()}-print.png`);
   } else if (kind === 'pack') {
     open3D(() => window.Viewer3D.downloadPack());
+  } else if (kind === 'glb') {
+    open3D(() => window.Viewer3D.downloadGlb());
   } else if (kind === 'all') {
     const cur = state.view;
     product().views.forEach((v, i) => {
@@ -1233,7 +1358,7 @@ function doExport(kind) {
     buildMask();
     render();
   }
-  exportMenu.hidden = true;
+  closeMenus();
 }
 
 /* ---------------- save / load ---------------- */
@@ -1285,7 +1410,9 @@ function saveDesign() {
   list.unshift(d);
   if (writeDesigns(list)) {
     state.designId = d.id;
-    toast('Saved “' + d.name + '”');
+    dirty = false;
+    setSaveState('Saved');
+    toast('Saved to My designs');
   }
 }
 $('#saveBtn').addEventListener('click', saveDesign);
@@ -1302,7 +1429,8 @@ async function loadDesign(d) {
     $('#removeBg').checked = d.custom.removeWhite;
     try { await setCustomProduct(d.custom.src, d.custom.removeWhite); } catch { /* ignore */ }
   }
-  setProduct(d.productId === 'custom' && !state.custom ? 'tee' : d.productId || 'tee');
+  const known = PRODUCTS.some((p) => p.id === d.productId) || (d.productId === 'custom' && state.custom);
+  setProduct(known ? d.productId : 'tee');
   for (const [k, v] of Object.entries(d.views || {})) {
     const L = layer(k);
     try {
@@ -1319,6 +1447,7 @@ async function loadDesign(d) {
   syncObjectPanel();
   render();
   dirty = false;
+  setSaveState(state.designId ? 'Saved' : 'Draft');
 }
 
 function resetDesign(silent) {
@@ -1329,6 +1458,7 @@ function resetDesign(silent) {
   $('#designName').value = 'Untitled drop';
   setProduct(state.productId === 'custom' && !state.custom ? 'tee' : state.productId);
   syncObjectPanel();
+  updateHistoryButtons();
   if (!silent) markDirty();
   render();
 }
@@ -1338,14 +1468,14 @@ const gallery = $('#gallery');
 function openGallery() {
   const grid = $('#galleryGrid');
   const list = readDesigns();
-  grid.innerHTML = list.length ? '' : '<p class="empty">No saved designs yet. Hit Save to keep one here.</p>';
+  grid.innerHTML = list.length ? '' : '<p class="empty">No saved designs yet. Press Save in the top bar and your design appears here.</p>';
   list.forEach((d) => {
     const card = document.createElement('div');
     card.className = 'g-card';
     const date = new Date(d.updated || Date.now()).toLocaleString();
     card.innerHTML = `<img alt="" src="${d.thumb}"><div class="g-meta"><strong></strong><small>${date}</small></div><div class="g-actions"><button class="btn sm" data-a="open">Open</button><button class="btn danger sm" data-a="del">Delete</button></div>`;
     card.querySelector('strong').textContent = d.name;
-    card.querySelector('[data-a=open]').addEventListener('click', async () => { gallery.close(); await loadDesign(d); toast('Opened “' + d.name + '”'); });
+    card.querySelector('[data-a=open]').addEventListener('click', async () => { gallery.close(); if (welcome.open) welcome.close(); await loadDesign(d); toast('Opened “' + d.name + '”'); });
     card.querySelector('[data-a=del]').addEventListener('click', () => {
       askConfirm('Delete “' + d.name + '”?', 'Delete').then((ok) => {
         if (!ok) return;
@@ -1364,8 +1494,10 @@ gallery.addEventListener('click', (e) => { if (e.target === gallery) gallery.clo
 
 // draft autosave
 let draftTimer = null;
+function setSaveState(t) { const s = $('#saveState'); if (s) s.textContent = t; }
 function markDirty() {
   dirty = true;
+  setSaveState(state.designId ? 'Unsaved changes' : 'Draft');
   updateHistoryButtons();
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {
@@ -1396,7 +1528,8 @@ document.addEventListener('keydown', (e) => {
     render();
     return;
   }
-  if (e.key === 'Escape') { selectObject(null); return; }
+  if (e.key === 'Escape') { closeMenus(); selectObject(null); return; }
+  if (e.key === '?') { helpDlg.showModal(); return; }
   if (e.key === '[') { setSize(state.size - (state.size > 20 ? 4 : 1)); return; }
   if (e.key === ']') { setSize(state.size + (state.size >= 20 ? 4 : 1)); return; }
   if (e.key.toLowerCase() === 'm') { setMirror(!state.mirror); return; }
@@ -1421,7 +1554,9 @@ window.DripLab = {
   get productId() { return state.productId; },
   get productName() { return product().name; },
   garmentColors: GARMENT_COLORS,
+  garmentName,
   setGarment,
+  setProduct(id) { if (id !== state.productId && PRODUCTS.some((p) => p.id === id)) setProduct(id); },
   // Artwork-only print for a product side, clipped to that product's shape.
   getPrint(pid, view) {
     const saved = { p: state.productId, v: state.view };
@@ -1465,20 +1600,39 @@ window.DripLab = {
   },
 };
 
+function showDesignMode() {
+  $('#v3d').hidden = true;
+}
 function open3D(then) {
+  const v = $('#v3d');
+  const status = $('#v3dStatus');
+  v.hidden = false;
   const go = () => window.Viewer3D.open(window.Viewer3D.models.includes(state.productId) ? state.productId : undefined)
     .then(() => then && then())
-    .catch((e) => { console.error(e); toast('3D view failed to start — WebGL may be disabled'); });
+    .catch((e) => { console.error(e); toast('3D preview could not start. WebGL may be turned off in this browser.'); showDesignMode(); });
   if (window.Viewer3D) { go(); return; }
-  toast('Loading 3D viewer…');
+  status.textContent = 'Loading 3D studio…';
+  status.hidden = false;
   const s = document.createElement('script');
   s.src = 'viewer3d.bundle.js';
   s.onload = go;
-  s.onerror = () => toast('Could not load the 3D viewer (viewer3d.bundle.js missing — run npm run build)');
+  s.onerror = () => { status.hidden = true; showDesignMode(); toast('The 3D studio file is missing (viewer3d.bundle.js).'); };
   document.body.appendChild(s);
 }
-$('#view3dBtn').addEventListener('click', () => open3D());
-const v3dObserver = new MutationObserver(() => { if ($('#v3d').hidden) { syncObjectPanel(); render(); } });
+$('#modePreview').addEventListener('click', () => { if ($('#v3d').hidden) open3D(); });
+$('#modeDesign').addEventListener('click', () => {
+  if (window.Viewer3D && !$('#v3d').hidden) window.Viewer3D.close();
+  else showDesignMode();
+});
+function syncMode() {
+  const preview = !$('#v3d').hidden;
+  $('#designView').hidden = preview;
+  $('#modeDesign').classList.toggle('active', !preview);
+  $('#modePreview').classList.toggle('active', preview);
+  $('#modeDesign').setAttribute('aria-selected', String(!preview));
+  $('#modePreview').setAttribute('aria-selected', String(preview));
+}
+const v3dObserver = new MutationObserver(() => { syncMode(); if ($('#v3d').hidden) { syncObjectPanel(); render(); } });
 v3dObserver.observe($('#v3d'), { attributes: true, attributeFilter: ['hidden'] });
 
 /* ---------------- boot ---------------- */
@@ -1493,14 +1647,33 @@ setProduct('tee');
 setTool('brush');
 dirty = false;
 
+// start screen
+const welcome = $('#welcome');
+function openWelcome(fresh) {
+  productCards($('#welcomeGrid'), (id) => {
+    resetDesign(true);
+    setProduct(id);
+    setTool('brush');
+    welcome.close();
+    setSaveState('Draft');
+  }, () => { welcome.close(); resetDesign(true); $('#productFile').click(); });
+  $('#welcomeSkip').hidden = fresh || !hasDraft;
+  $('#welcomeOpen').hidden = !readDesigns().length;
+  if (!welcome.open) welcome.showModal();
+}
+let hasDraft = false;
+$('#welcomeSkip').addEventListener('click', () => welcome.close());
+$('#welcomeOpen').addEventListener('click', () => { openGallery(); });
+welcome.addEventListener('cancel', (e) => { if (!hasDraft) e.preventDefault(); });
+
 (async () => {
-  try {
-    const draft = JSON.parse(localStorage.getItem(LS_DRAFT) || 'null');
-    if (draft && (Object.keys(draft.views || {}).length || draft.productId !== 'tee')) {
-      await loadDesign(draft);
-      toast('Restored your last session');
-    }
-  } catch { /* no draft */ }
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(LS_DRAFT) || 'null'); } catch { /* no draft */ }
+  hasDraft = !!(draft && Object.keys(draft.views || {}).length);
+  if (hasDraft) {
+    try { await loadDesign(draft); toast('Restored your last design'); return; } catch { hasDraft = false; }
+  }
+  openWelcome(false);
 })();
 
 if (document.fonts) document.fonts.ready.then(render);

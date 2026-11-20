@@ -1,0 +1,10 @@
+{
+  "name": "DRIPLAB Studio",
+  "short_name": "DRIPLAB",
+  "description": "Design streetwear on real 3D blanks and download print and 3D files.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f1f0ec",
+  "theme_color": "#f1f0ec",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

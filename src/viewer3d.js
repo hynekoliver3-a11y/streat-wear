@@ -99,7 +99,7 @@ function initRenderer() {
   rim.position.set(-1.5, 1.2, -1.8);
   scene.add(rim);
 
-  ground = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  ground = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.ShadowMaterial({ opacity: 0.16 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -117,9 +117,9 @@ function studioBackdrop() {
   c.width = 1024; c.height = 1024;
   const x = c.getContext('2d');
   const g = x.createRadialGradient(512, 430, 40, 512, 512, 760);
-  g.addColorStop(0, '#f3f3f1');
-  g.addColorStop(0.55, '#d9d9d6');
-  g.addColorStop(1, '#a9a9a6');
+  g.addColorStop(0, '#fbfbf9');
+  g.addColorStop(0.55, '#ecebe7');
+  g.addColorStop(1, '#d3d1cb');
   x.fillStyle = g;
   x.fillRect(0, 0, 1024, 1024);
   const t = new THREE.CanvasTexture(c);
@@ -202,7 +202,7 @@ function normalize(root, targetHeight) {
 }
 
 async function loadModel(key, bytes, def) {
-  setStatus('Loading 3D model…');
+  setStatus('Loading 3D blank…');
   const gltf = await parseGlb(bytes);
   const root = gltf.scene;
   const isShoe = key === 'sneaker';
@@ -320,11 +320,11 @@ function decalMaterial(tex) {
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -4,
-    roughness: fab ? 0.8 : 0.6,
+    roughness: fab ? 0.85 : 0.7,
     metalness: 0,
     normalMap: fab ? fabricNormal : null,
     normalScale: new THREE.Vector2(0.6, 0.6),
-    sheen: fab ? 0.6 : 0,
+    sheen: fab ? 0.15 : 0,
     sheenRoughness: 0.6,
     sheenColor: new THREE.Color(0x555555),
   });
@@ -442,7 +442,7 @@ function buildVariantUI() {
     current.variants.names.forEach((n, i) => {
       const b = document.createElement('button');
       b.className = 'chip' + (i === 0 ? ' active' : '');
-      b.textContent = n;
+      b.textContent = n.charAt(0).toUpperCase() + n.slice(1);
       b.addEventListener('click', () => {
         for (const e of current.variants.perMesh) if (e.byVariant[i]) e.mesh.material = e.byVariant[i];
         [...box.children].forEach((c) => c.classList.toggle('active', c === b));
@@ -456,7 +456,8 @@ function buildVariantUI() {
       const b = document.createElement('button');
       b.className = 'swatch' + (c === api().garment ? ' active' : '');
       b.style.background = c;
-      b.title = c;
+      b.title = api().garmentName ? api().garmentName(c) : c;
+      b.setAttribute('aria-label', b.title);
       b.addEventListener('click', () => {
         api().setGarment(c);
         for (const m of current.meshes) m.material.color.set(c);
@@ -483,6 +484,7 @@ async function selectModel(key) {
   const def = MODELS[key];
   if (!def) return;
   setProductButtons(key);
+  if (api() && api().setProduct) api().setProduct(key);
   try { await loadModel(key, def.data, def); }
   catch (e) { console.error(e); setStatus('Could not load the 3D model'); }
 }
@@ -671,7 +673,12 @@ function wire() {
   $('#v3dDrawFile').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadDrawing(f); });
   $('#v3dUpload').addEventListener('click', () => $('#v3dDrawFile').click());
   $('#v3dSpin').addEventListener('click', (e) => { autoRotate = !autoRotate; snapTarget = null; e.currentTarget.classList.toggle('active', autoRotate); });
-  document.querySelectorAll('#v3dAngles [data-angle]').forEach((b) => b.addEventListener('click', () => snap(+b.dataset.angle * Math.PI / 180)));
+  const angleBtns = [...document.querySelectorAll('#v3dAngles [data-angle]')];
+  angleBtns.forEach((b) => b.addEventListener('click', () => {
+    snap(+b.dataset.angle * Math.PI / 180);
+    angleBtns.forEach((x) => x.classList.toggle('active', x === b));
+  }));
+  $('#v3dSpin').addEventListener('click', () => angleBtns.forEach((x) => x.classList.remove('active')));
   $('#v3dShot').addEventListener('click', screenshot);
   $('#v3dGlb').addEventListener('click', downloadGlb);
   $('#v3dPack').addEventListener('click', downloadPack);
@@ -705,8 +712,8 @@ async function open(preferred) {
   else await refreshArt();
   const note = $('#v3dNote');
   const pid = api() ? api().productId : 'tee';
-  if (!MODELS[pid] && pid !== 'custom') {
-    note.textContent = `No 3D model for ${api().productName} yet — showing your front/back artwork on the T-shirt. Load a .glb of the real item to see it on that.`;
+  if (!MODELS[pid] && current && current.key !== 'glb') {
+    note.textContent = 'Your own product is a photo, so it has no 3D shape. Your artwork is shown on the T-shirt. Load a .glb of the item to see it in 3D.';
     note.hidden = false;
   } else note.hidden = true;
 }
