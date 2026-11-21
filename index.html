@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRIPLAB Studio</title>
+<meta name="description" content="Design streetwear on real 3D blanks, preview it in 360° and download print files and 3D files.">
+<meta name="theme-color" content="#f1f0ec">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wdth,wght@100..125,500..900&family=Bebas+Neue&family=Bungee&family=Inter:wght@400;500;600;700&family=Pacifico&family=Permanent+Marker&family=Press+Start+2P&family=Rubik+Mono+One&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" aria-label="DRIPLAB Studio"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">DRIPLAB</span></div>
+  <div class="doc">
+    <input id="designName" class="design-name" value="Untitled drop" aria-label="Design name" spellcheck="false" maxlength="60">
+    <span class="save-state" id="saveState">Draft</span>
+  </div>
+  <nav class="modes" role="tablist" aria-label="Mode">
+    <button role="tab" id="modeDesign" class="active" aria-selected="true">Design</button>
+    <button role="tab" id="modePreview" aria-selected="false">3D Preview</button>
+  </nav>
+  <div class="top-actions">
+    <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+    <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+    <div class="menu-wrap">
+      <button id="fileBtn" class="btn ghost" aria-haspopup="menu">File</button>
+      <div class="menu" id="fileMenu" role="menu" hidden>
+        <button id="newBtn" role="menuitem"><strong>New design</strong><small>Pick a blank and start over</small></button>
+        <button id="galleryBtn" role="menuitem"><strong>My designs</strong><small>Open a saved design</small></button>
+        <button id="clearBtn" role="menuitem"><strong>Clear this side</strong><small>Remove all artwork from the current side</small></button>
+        <button id="helpBtn" role="menuitem"><strong>Keyboard shortcuts</strong><small>Tools, undo, nudging</small></button>
+      </div>
+    </div>
+    <button id="saveBtn" class="btn">Save</button>
+    <div class="menu-wrap">
+      <button id="exportBtn" class="btn primary" aria-haspopup="menu">Download</button>
+      <div class="menu menu-wide" id="exportMenu" role="menu" hidden>
+        <button data-export="pack" role="menuitem"><strong>Product pack (.zip)</strong><small>3D file, 5 studio renders, print files, mockups</small></button>
+        <button data-export="glb" role="menuitem"><strong>3D file (.glb)</strong><small>Your designed product for Blender, 3D viewers, AR</small></button>
+        <button data-export="print" role="menuitem"><strong>Print file — this side</strong><small id="printFileInfo">Artwork only, transparent PNG at 300 DPI</small></button>
+        <button data-export="mockup" role="menuitem"><strong>Mockup — this side</strong><small>Flat product image, PNG</small></button>
+        <button data-export="all" role="menuitem"><strong>Mockups — all sides</strong><small>Front and back, PNG</small></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="workspace">
+  <section class="design-view" id="designView">
+    <nav class="toolbar" id="toolbar" aria-label="Tools">
+      <button data-tool="select" title="Move, scale, rotate (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z"/></svg><span>Move</span></button>
+      <button data-tool="brush" title="Brush (B)"><svg viewBox="0 0 24 24"><path d="M4 20c3 0 5-2 5-4.5S7 13 5.5 14 4 18 4 20z"/><path d="M9 15L19 5l2 2-10 10"/></svg><span>Brush</span></button>
+      <button data-tool="spray" title="Spray paint (S)"><svg viewBox="0 0 24 24"><path d="M7 10h7v11H7z"/><path d="M9 10V7h3v3"/><path d="M17 5h.01M20 4h.01M19 8h.01M21 7h.01M18 11h.01"/></svg><span>Spray</span></button>
+      <button data-tool="eraser" title="Eraser (E)"><svg viewBox="0 0 24 24"><path d="M4 16l9-9 6 6-7 7H8z"/><path d="M12 20h8"/></svg><span>Erase</span></button>
+      <button data-tool="fill" title="Fill (G)"><svg viewBox="0 0 24 24"><path d="M5 11l7-7 7 7-7 7z"/><path d="M19 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z"/></svg><span>Fill</span></button>
+      <button data-tool="line" title="Line (L) — Shift snaps 45°"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg><span>Line</span></button>
+      <button data-tool="rect" title="Rectangle (R) — Shift for square"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg><span>Rect</span></button>
+      <button data-tool="ellipse" title="Ellipse (O) — Shift for circle"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg><span>Ellipse</span></button>
+      <button data-tool="text" title="Text (T)"><svg viewBox="0 0 24 24"><path d="M5 7V4h14v3"/><path d="M12 4v16"/><path d="M9 20h6"/></svg><span>Text</span></button>
+      <button data-tool="picker" title="Color picker (I)"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M13 7l-8 8v4h4l8-8"/></svg><span>Pick</span></button>
+      <div class="tool-sep"></div>
+      <button id="addImageBtn" title="Upload an image, logo or drawing"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg><span>Upload</span></button>
+      <button id="mirrorBtn" class="toggle" title="Mirror drawing (M)"><svg viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M8 7l-4 5 4 5z"/><path d="M16 7l4 5-4 5z"/></svg><span>Mirror</span></button>
+    </nav>
+
+    <section class="stage" id="stage">
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="canvas" aria-label="Design canvas"></canvas>
+      </div>
+      <div class="stage-foot">
+        <div class="side-switch" id="viewTabs" role="tablist" aria-label="Side"></div>
+        <p class="hint" id="hint"></p>
+      </div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <section class="sect sect-selected" id="objectCard" hidden>
+        <h3><span id="objectTitle">Selected</span> <span class="sect-val" id="objSize"></span></h3>
+        <div id="textProps">
+          <input id="textInput" class="text-input" placeholder="Your text" maxlength="80">
+          <label class="field">Font
+            <select id="fontSelect">
+              <option value="Anton">Anton — condensed</option>
+              <option value="Bebas Neue">Bebas Neue — tall</option>
+              <option value="Archivo">Archivo — wide</option>
+              <option value="Bungee">Bungee — block</option>
+              <option value="Rubik Mono One">Rubik Mono — heavy</option>
+              <option value="UnifrakturMaguntia">Gothic</option>
+              <option value="Permanent Marker">Marker</option>
+              <option value="Pacifico">Script</option>
+              <option value="Press Start 2P">Pixel</option>
+              <option value="Inter">Inter — clean</option>
+            </select>
+          </label>
+          <div class="row">
+            <label class="field">Fill <input type="color" id="textColor"></label>
+            <label class="field">Outline <input type="color" id="textStroke"></label>
+          </div>
+          <label class="field">Outline width <span class="val" id="textStrokeWVal"></span><input type="range" id="textStrokeW" min="0" max="20" step="1"></label>
+          <label class="field">Arc <span class="val" id="textArcVal"></span><input type="range" id="textArc" min="-180" max="180" step="5"></label>
+          <label class="field">Letter spacing <span class="val" id="textSpacingVal"></span><input type="range" id="textSpacing" min="-10" max="40" step="1"></label>
+        </div>
+        <label class="field" id="tintRow" hidden>Graphic color <input type="color" id="tintColor"></label>
+        <label class="field">Opacity <span class="val" id="objOpacityVal"></span><input type="range" id="objOpacity" min="5" max="100" step="1"></label>
+        <div class="btn-grid">
+          <button class="btn ghost sm" data-obj="forward">Bring forward</button>
+          <button class="btn ghost sm" data-obj="backward">Send back</button>
+          <button class="btn ghost sm" data-obj="flip">Flip</button>
+          <button class="btn ghost sm" data-obj="center">Center</button>
+          <button class="btn ghost sm" data-obj="duplicate">Duplicate</button>
+          <button class="btn danger sm" data-obj="delete">Delete</button>
+        </div>
+      </section>
+
+      <section class="sect">
+        <h3>Blank</h3>
+        <div class="product-grid" id="productGrid"></div>
+        <label class="check" id="removeBgRow" hidden><input type="checkbox" id="removeBg" checked> Remove white background</label>
+      </section>
+
+      <section class="sect" id="areaBox">
+        <h3>Print area <span class="sect-val" id="areaSize"></span></h3>
+        <label class="field">Size and placement
+          <select id="areaPreset"></select>
+        </label>
+        <div class="row">
+          <label class="field">Width (in) <input type="number" id="areaW" class="num" min="1" max="30" step="0.25"></label>
+          <label class="field">Height (in) <input type="number" id="areaH" class="num" min="1" max="30" step="0.25"></label>
+        </div>
+        <div class="row row-btns">
+          <button class="btn sm" id="areaAdjust">Adjust on canvas</button>
+          <button class="btn ghost sm" id="areaReset">Reset</button>
+        </div>
+        <label class="check"><input type="checkbox" id="guidesToggle" checked> Show print area</label>
+        <label class="check"><input type="checkbox" id="areaClip"> Print only inside the area</label>
+      </section>
+
+      <section class="sect" id="garmentCard">
+        <h3>Garment color <span class="sect-val" id="garmentName"></span></h3>
+        <div class="swatches" id="garmentSwatches"></div>
+      </section>
+
+      <section class="sect">
+        <h3>Add text</h3>
+        <div class="text-styles" id="textStyles"></div>
+      </section>
+
+      <section class="sect">
+        <h3>Graphics <span class="sect-val">uses paint color</span></h3>
+        <div class="graphic-grid" id="graphicGrid"></div>
+      </section>
+
+      <section class="sect">
+        <h3>Paint</h3>
+        <div class="swatches small" id="paintSwatches"></div>
+        <label class="field">Custom color <input type="color" id="paintColor" value="#111111"></label>
+        <label class="field">Brush size <span class="val" id="sizeVal"></span><input type="range" id="size" min="1" max="120" value="14"></label>
+        <label class="field">Opacity <span class="val" id="opacityVal"></span><input type="range" id="opacity" min="5" max="100" value="100"></label>
+        <label class="check"><input type="checkbox" id="fillShapes"> Filled shapes</label>
+        <label class="check"><input type="checkbox" id="clipToggle" checked> Keep artwork on the product</label>
+      </section>
+    </aside>
+  </section>
+
+  <section class="v3d" id="v3d" hidden>
+    <div class="v3d-stage" id="v3dStage">
+      <canvas id="v3dCanvas" aria-label="3D product preview"></canvas>
+      <div class="v3d-status" id="v3dStatus" hidden></div>
+      <div class="v3d-empty" id="v3dEmpty" hidden>Nothing printed yet. Upload a drawing, drop an image here, or switch to Design.</div>
+      <div class="v3d-note" id="v3dNote" hidden></div>
+      <div class="v3d-bottom">
+        <div class="angles" id="v3dAngles">
+          <button class="chip active" id="v3dSpin" title="Turntable spin">Spin</button>
+          <button class="chip" data-angle="0">Front</button>
+          <button class="chip" data-angle="-90">Left</button>
+          <button class="chip" data-angle="180">Back</button>
+          <button class="chip" data-angle="90">Right</button>
+        </div>
+        <p class="v3d-help">Drag to rotate · scroll or pinch to zoom</p>
+      </div>
+    </div>
+    <aside class="panel v3d-panel">
+      <section class="sect">
+        <h3>3D blank</h3>
+        <div class="model-list" id="v3dProducts">
+          <button data-model="tee"><strong>T-shirt</strong><small>Short sleeve, crew neck</small></button>
+          <button data-model="crewneck"><strong>Crewneck</strong><small>Sweatshirt, ribbed cuffs and hem</small></button>
+          <button data-model="sneaker"><strong>Sneaker</strong><small>Knit runner, 3 colorways</small></button>
+          <button data-model="glb"><strong>Load a 3D model…</strong><small>Any product as a .glb file, e.g. jeans, a hoodie</small></button>
+        </div>
+      </section>
+      <section class="sect sect-selected" id="v3dSaveBlank" hidden>
+        <h3>Save as blank</h3>
+        <label class="field">Name <input id="blankName" class="text-input" maxlength="40" placeholder="e.g. Baggy jeans"></label>
+        <label class="field">Type
+          <select id="blankKind">
+            <option value="top">Top: tee, hoodie, sweatshirt</option>
+            <option value="bottom">Pants: jeans, sweatpants</option>
+            <option value="shorts">Shorts</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div class="stack" style="margin-top:12px"><button class="btn primary" id="blankSave">Save to my blanks</button></div>
+        <p class="note">Adds it next to the T-shirt in the designer, with front and back views, a print area and sizes in inches. Saved in this browser.</p>
+      </section>
+      <section class="sect">
+        <h3>Color</h3>
+        <div class="swatches" id="v3dColors"></div>
+      </section>
+      <section class="sect">
+        <h3>Artwork</h3>
+        <div class="stack">
+          <button class="btn" id="v3dUpload">Upload drawing</button>
+          <button class="btn ghost" id="v3dClose">Edit in designer</button>
+        </div>
+        <p class="note">Photos or scans of drawings on paper work. The paper is removed so only the ink prints.</p>
+      </section>
+      <section class="sect">
+        <h3>Download</h3>
+        <div class="stack">
+          <button class="btn primary" id="v3dPack">Product pack (.zip)</button>
+          <button class="btn" id="v3dGlb">3D file (.glb)</button>
+          <button class="btn" id="v3dRecord">Record 360° video</button>
+          <button class="btn" id="v3dShot">Screenshot (.png)</button>
+        </div>
+      </section>
+      <p class="credit">Sneaker model “Materials Variants Shoe” © Shopify, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p>
+    </aside>
+    <input type="file" id="v3dDrawFile" accept="image/*" hidden>
+    <input type="file" id="v3dGlbFile" accept=".glb,model/gltf-binary" hidden>
+  </section>
+</main>
+
+<dialog id="welcome" class="welcome" aria-labelledby="welcomeTitle">
+  <div class="welcome-inner">
+    <div class="welcome-head">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">DRIPLAB</span></div>
+      <h1 id="welcomeTitle">Pick a blank</h1>
+      <p>Draw, type or upload artwork onto a real 3D garment, check it from every angle, then download print files and the 3D file.</p>
+    </div>
+    <div class="welcome-grid" id="welcomeGrid"></div>
+    <div class="welcome-foot">
+      <button class="btn ghost" id="welcomeOpen">Open a saved design</button>
+      <button class="btn ghost" id="welcomeSkip">Continue where I left off</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="gallery" class="sheet" aria-labelledby="galleryTitle">
+  <div class="sheet-head">
+    <h2 id="galleryTitle">My designs</h2>
+    <button class="icon-btn" id="closeGallery" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="gallery-grid" id="galleryGrid"></div>
+</dialog>
+
+<dialog id="helpDlg" class="sheet sheet-narrow" aria-labelledby="helpTitle">
+  <div class="sheet-head">
+    <h2 id="helpTitle">Keyboard shortcuts</h2>
+    <button class="icon-btn" id="closeHelp" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <dl class="keys">
+    <dt>V</dt><dd>Move, scale, rotate</dd>
+    <dt>B · S · E</dt><dd>Brush · spray · eraser</dd>
+    <dt>G · I</dt><dd>Fill · color picker</dd>
+    <dt>L · R · O</dt><dd>Line · rectangle · ellipse (hold Shift to snap)</dd>
+    <dt>T</dt><dd>Text</dd>
+    <dt>M</dt><dd>Mirror drawing</dd>
+    <dt>[ ]</dt><dd>Brush size</dd>
+    <dt>Ctrl Z</dt><dd>Undo (Shift for redo)</dd>
+    <dt>Ctrl S</dt><dd>Save to My designs</dd>
+    <dt>Ctrl D</dt><dd>Duplicate selected</dd>
+    <dt>Arrows</dt><dd>Nudge selected (Shift = 10)</dd>
+    <dt>Delete</dt><dd>Remove selected</dd>
+  </dl>
+</dialog>
+
+<dialog id="confirmDlg" class="confirm">
+  <p id="confirmMsg"></p>
+  <div class="confirm-actions">
+    <button class="btn ghost" id="confirmCancel">Cancel</button>
+    <button class="btn primary" id="confirmOk">OK</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<input type="file" id="imageFile" accept="image/*" hidden>
+<input type="file" id="productFile" accept="image/*" hidden>
+
+<script src="products-baked.js"></script>
+<script src="products.js"></script>
+<script src="graphics.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

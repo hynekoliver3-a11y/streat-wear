@@ -1,0 +1,14 @@
+{
+  "name": "driplab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "bake": "node scripts/bake-2d.cjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "fflate": "^0.8.2",
+    "three": "0.170.0"
+  }
+}
